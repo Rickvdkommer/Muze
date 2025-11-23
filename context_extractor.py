@@ -88,7 +88,6 @@ class ContextExtractor:
 8. Use markdown formatting: headers, bullet points, bold text
 
 **Output Format:**
-```markdown
 # Context: [Topic]
 
 ## Overview
@@ -105,13 +104,14 @@ class ContextExtractor:
 
 ## Relevant Details
 [Any other important information]
-```
 
 **IMPORTANT:**
 - If NO information about "{topic}" exists in the knowledge graph, say: "No information about '{topic}' found in your knowledge base yet."
 - Be thorough but concise - every word counts
 - Make it immediately useful for prompting another AI
 - User will paste this directly into another conversation
+- DO NOT wrap output in code blocks or add "markdown" label
+- Output ONLY the formatted markdown content, nothing else
 
 Generate the context prompt now:"""
 
@@ -127,18 +127,20 @@ Generate the context prompt now:"""
 
             context = response.text.strip()
 
+            # Remove markdown code block wrappers if present
+            if context.startswith('```markdown'):
+                context = context[len('```markdown'):].strip()
+            elif context.startswith('```'):
+                context = context[3:].strip()
+            if context.endswith('```'):
+                context = context[:-3].strip()
+
             # Validate length
-            if len(context) > 1500:
+            if len(context) > 1550:
                 # Try to trim while keeping structure
                 logger.warning(f"Context too long ({len(context)} chars), trimming...")
-                # Keep first 1450 chars and add note
-                context = context[:1450] + "\n\n*[Truncated to fit WhatsApp limit]*"
-
-            # Add copy instruction footer
-            footer = "\n\n---\n📋 *Copy this message and paste it into your AI conversation for context*"
-
-            if len(context + footer) <= 1550:
-                context += footer
+                # Keep first 1500 chars and add note
+                context = context[:1500] + "\n\n*[Truncated to fit WhatsApp limit]*"
 
             logger.info(f"✅ Context generated for '{topic}' ({len(context)} chars)")
             return context

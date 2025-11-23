@@ -73,7 +73,7 @@ def before_first_request():
 def webhook():
     """
     Twilio webhook endpoint for incoming WhatsApp messages.
-    Now just stores messages without auto-responding (human-in-the-loop).
+    Context requests auto-respond immediately, others go through human-in-the-loop.
     """
     try:
         # Get incoming message
@@ -82,22 +82,50 @@ def webhook():
 
         logger.info(f"Received message from {from_number}: {incoming_msg}")
 
-        # Store incoming message in database
+        # Check if this is a context request
+        is_context_request, context_response = context_extractor.handle_context_request(
+            from_number, incoming_msg
+        )
+
+        if is_context_request:
+            # Context requests auto-respond immediately
+            logger.info(f"Context request detected - auto-responding to {from_number}")
+
+            # Store incoming message
+            incoming_message = store_message(
+                phone_number=from_number,
+                direction='incoming',
+                message_text=incoming_msg
+            )
+
+            # Store outgoing response
+            store_message(
+                phone_number=from_number,
+                direction='outgoing',
+                message_text=context_response
+            )
+
+            # Mark incoming message as processed
+            mark_message_processed(incoming_message.id)
+
+            # Auto-respond with context
+            resp = MessagingResponse()
+            resp.message(context_response)
+
+            logger.info(f"Context sent to {from_number}")
+            return str(resp)
+
+        # Not a context request - store for human review
         message = store_message(
             phone_number=from_number,
             direction='incoming',
             message_text=incoming_msg
         )
 
-        logger.info(f"Message stored with ID: {message.id}")
+        logger.info(f"Message stored with ID: {message.id} - awaiting human review")
 
-        # Return empty response (no auto-reply for now)
+        # Return empty response (human-in-the-loop)
         resp = MessagingResponse()
-
-        # Optional: Send acknowledgment that message was received
-        # Uncomment this if you want to send a simple ack:
-        # resp.message("Message received. A human will respond soon!")
-
         return str(resp)
 
     except Exception as e:
