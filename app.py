@@ -14,7 +14,8 @@ from database import (
     update_user_corpus,
     get_unprocessed_messages,
     mark_message_processed,
-    get_or_create_user
+    get_or_create_user,
+    get_all_users
 )
 
 # Load environment variables
@@ -97,6 +98,33 @@ def webhook():
         logger.error(f"Error in webhook: {str(e)}")
         resp = MessagingResponse()
         return str(resp)
+
+
+@app.route("/api/users", methods=["GET"])
+def list_users():
+    """
+    Get all users who have messaged the bot.
+    Example: /api/users
+    """
+    try:
+        users = get_all_users()
+
+        return jsonify({
+            "count": len(users),
+            "users": [
+                {
+                    "phone_number": user.phone_number,
+                    "display_name": user.display_name,
+                    "created_at": user.created_at.isoformat(),
+                    "last_message_at": user.last_message_at.isoformat()
+                }
+                for user in users
+            ]
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving users: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/users/<phone_number>/messages", methods=["GET"])

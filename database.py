@@ -252,3 +252,13 @@ def mark_message_processed(message_id):
         raise e
     finally:
         db.close()
+
+
+def get_all_users():
+    """Get all users with their message counts"""
+    db = get_db()
+    try:
+        users = db.query(User).order_by(User.last_message_at.desc()).all()
+        return users
+    finally:
+        db.close()

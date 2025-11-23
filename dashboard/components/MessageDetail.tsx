@@ -144,7 +144,7 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
           value={editedResponse}
           onChange={(e) => setEditedResponse(e.target.value)}
           rows={6}
-          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none"
+          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-gray-900 placeholder:text-gray-400"
           placeholder="Edit the AI response before sending..."
         />
         <div className="mt-2 flex items-center justify-between text-sm text-gray-500">

@@ -31,6 +31,12 @@ export async function getUnprocessedMessages(limit = 50): Promise<Message[]> {
   return response.data.messages;
 }
 
+// Get all users
+export async function getAllUsers(): Promise<User[]> {
+  const response = await api.get('/api/users');
+  return response.data.users;
+}
+
 // Get user messages
 export async function getUserMessages(phoneNumber: string, limit = 50): Promise<Message[]> {
   const response = await api.get(`/api/users/${encodeURIComponent(phoneNumber)}/messages?limit=${limit}`);
