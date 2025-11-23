@@ -62,30 +62,22 @@ export async function markMessageProcessed(messageId: number): Promise<void> {
   await api.post(`/api/messages/${messageId}/process`);
 }
 
-// Send WhatsApp message via Twilio
+// Send WhatsApp message via Twilio (secure server-side API route)
 export async function sendWhatsAppMessage(to: string, message: string): Promise<void> {
-  const accountSid = process.env.NEXT_PUBLIC_TWILIO_ACCOUNT_SID;
-  const authToken = process.env.NEXT_PUBLIC_TWILIO_AUTH_TOKEN;
-  const from = process.env.NEXT_PUBLIC_TWILIO_PHONE_NUMBER;
-
-  const response = await fetch(
-    `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`,
-    {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Basic ' + btoa(`${accountSid}:${authToken}`),
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-      body: new URLSearchParams({
-        To: to,
-        From: from || '',
-        Body: message,
-      }),
-    }
-  );
+  const response = await fetch('/api/send-message', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      to: to,
+      message: message,
+    }),
+  });
 
   if (!response.ok) {
-    throw new Error('Failed to send message via Twilio');
+    const error = await response.json();
+    throw new Error(error.error || 'Failed to send message via Twilio');
   }
 }
 
