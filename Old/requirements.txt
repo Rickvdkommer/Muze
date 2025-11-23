@@ -1,0 +1,12 @@
+torch>=2.0.0
+torchaudio>=2.0.0
+transformers>=4.30.0
+huggingface_hub>=0.16.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+tokenizers>=0.13.0
+moshi>=0.1.0  # For the audio tokenizer
+accelerate>=0.26.0  # Required for model loading
+bitsandbytes>=0.41.0  # For model quantization
+safetensors>=0.4.0  # For safe model loading
+flask-ngrok>=0.0.25  # For Colab URL tunneling
