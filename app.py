@@ -1,11 +1,20 @@
 import os
 import logging
-from pathlib import Path
-from flask import Flask, request
+from flask import Flask, request, jsonify
 from twilio.twiml.messaging_response import MessagingResponse
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+from database import (
+    init_db,
+    store_message,
+    get_user_messages,
+    get_user_corpus,
+    update_user_corpus,
+    get_unprocessed_messages,
+    mark_message_processed,
+    get_or_create_user
+)
 
 # Load environment variables
 load_dotenv()
@@ -18,7 +27,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration
-CORPUS_FILE = "user_corpus.md"
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
@@ -26,97 +34,219 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-def load_corpus():
-    """Load the user corpus from the markdown file."""
-    corpus_path = Path(CORPUS_FILE)
-    if corpus_path.exists():
-        with open(corpus_path, 'r', encoding='utf-8') as f:
-            return f.read()
-    else:
-        # Create initial corpus structure
-        initial_corpus = """# Personal Knowledge Graph
-
-## Worldview
-_No information yet._
-
-## Personal History
-_No information yet._
-
-## Values & Beliefs
-_No information yet._
-
-## Goals & Aspirations
-_No information yet._
-
-## Relationships
-_No information yet._
-
-## Interests & Hobbies
-_No information yet._
-
----
-_Last updated: Initial creation_
-"""
-        with open(corpus_path, 'w', encoding='utf-8') as f:
-            f.write(initial_corpus)
-        return initial_corpus
+# Initialize database on startup
+@app.before_request
+def before_first_request():
+    """Initialize database before first request"""
+    if not hasattr(app, 'db_initialized'):
+        try:
+            init_db()
+            app.db_initialized = True
+            logger.info("Database initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize database: {str(e)}")
 
 
-def update_corpus(user_message, ai_response):
+@app.route("/webhook", methods=["POST"])
+def webhook():
     """
-    Update the corpus with new conversation insights using Gemini to organize content.
+    Twilio webhook endpoint for incoming WhatsApp messages.
+    Now just stores messages without auto-responding (human-in-the-loop).
     """
     try:
-        current_corpus = load_corpus()
+        # Get incoming message
+        incoming_msg = request.values.get('Body', '').strip()
+        from_number = request.values.get('From', '')
 
-        # Create prompt for Gemini to refine and update the corpus
-        refine_prompt = f"""You are a personal knowledge curator. Your job is to update a structured knowledge graph about a person based on new conversation information.
+        logger.info(f"Received message from {from_number}: {incoming_msg}")
 
-**Current Knowledge Graph:**
-{current_corpus}
-
-**New Conversation:**
-User: {user_message}
-AI: {ai_response}
-
-**Task:**
-1. Extract any meaningful information about the user from this conversation
-2. Update the relevant sections of the knowledge graph (Worldview, Personal History, Values & Beliefs, Goals & Aspirations, Relationships, Interests & Hobbies)
-3. Preserve all existing information
-4. Add new insights in a concise, organized manner
-5. If no new information is worth adding, return the corpus unchanged
-6. Keep the markdown structure intact
-
-Return ONLY the updated knowledge graph in markdown format, nothing else."""
-
-        # Use Gemini to refine the corpus
-        response = client.models.generate_content(
-            model='gemini-2.0-flash-exp',
-            contents=refine_prompt,
-            config=types.GenerateContentConfig(
-                temperature=0.3,
-                max_output_tokens=2000,
-            )
+        # Store incoming message in database
+        message = store_message(
+            phone_number=from_number,
+            direction='incoming',
+            message_text=incoming_msg
         )
 
-        refined_corpus = response.text.strip()
+        logger.info(f"Message stored with ID: {message.id}")
 
-        # Save updated corpus
-        with open(CORPUS_FILE, 'w', encoding='utf-8') as f:
-            f.write(refined_corpus)
+        # Return empty response (no auto-reply for now)
+        resp = MessagingResponse()
 
-        logger.info("Corpus updated successfully")
+        # Optional: Send acknowledgment that message was received
+        # Uncomment this if you want to send a simple ack:
+        # resp.message("Message received. A human will respond soon!")
+
+        return str(resp)
+
+    except Exception as e:
+        logger.error(f"Error in webhook: {str(e)}")
+        resp = MessagingResponse()
+        return str(resp)
+
+
+@app.route("/api/users/<phone_number>/messages", methods=["GET"])
+def get_messages(phone_number):
+    """
+    Get message history for a specific user.
+    Example: /api/users/whatsapp:+31634829116/messages?limit=50
+    """
+    try:
+        limit = request.args.get('limit', 50, type=int)
+
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        messages = get_user_messages(phone_number, limit=limit)
+
+        return jsonify({
+            "phone_number": phone_number,
+            "message_count": len(messages),
+            "messages": [
+                {
+                    "id": msg.id,
+                    "direction": msg.direction,
+                    "text": msg.message_text,
+                    "timestamp": msg.timestamp.isoformat(),
+                    "processed": msg.processed
+                }
+                for msg in messages
+            ]
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/users/<phone_number>/corpus", methods=["GET"])
+def get_corpus(phone_number):
+    """
+    Get the markdown corpus for a specific user.
+    Example: /api/users/whatsapp:+31634829116/corpus
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        corpus = get_user_corpus(phone_number)
+
+        if corpus:
+            return jsonify({
+                "phone_number": phone_number,
+                "corpus": corpus
+            }), 200
+        else:
+            return jsonify({
+                "error": "User not found or corpus not available"
+            }), 404
+
+    except Exception as e:
+        logger.error(f"Error retrieving corpus: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/users/<phone_number>/corpus", methods=["PUT"])
+def update_corpus(phone_number):
+    """
+    Update the corpus for a specific user.
+    Example: PUT /api/users/whatsapp:+31634829116/corpus
+    Body: {"corpus": "# Updated corpus..."}
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        data = request.get_json()
+        new_corpus = data.get('corpus')
+
+        if not new_corpus:
+            return jsonify({"error": "corpus field required"}), 400
+
+        success = update_user_corpus(phone_number, new_corpus)
+
+        if success:
+            return jsonify({
+                "message": "Corpus updated successfully",
+                "phone_number": phone_number
+            }), 200
+        else:
+            return jsonify({"error": "User not found"}), 404
 
     except Exception as e:
         logger.error(f"Error updating corpus: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
-def generate_ai_response(user_message):
+@app.route("/api/messages/unprocessed", methods=["GET"])
+def get_unprocessed():
     """
-    Generate an AI response using Gemini with the current corpus as context.
+    Get unprocessed messages (for human-in-the-loop queue).
+    Example: /api/messages/unprocessed?limit=10
     """
     try:
-        corpus = load_corpus()
+        limit = request.args.get('limit', 10, type=int)
+        messages = get_unprocessed_messages(limit=limit)
+
+        return jsonify({
+            "count": len(messages),
+            "messages": [
+                {
+                    "id": msg.id,
+                    "phone_number": msg.phone_number,
+                    "text": msg.message_text,
+                    "timestamp": msg.timestamp.isoformat()
+                }
+                for msg in messages
+            ]
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving unprocessed messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/messages/<int:message_id>/process", methods=["POST"])
+def process_message(message_id):
+    """
+    Mark a message as processed.
+    Example: POST /api/messages/123/process
+    """
+    try:
+        success = mark_message_processed(message_id)
+
+        if success:
+            return jsonify({
+                "message": "Message marked as processed",
+                "message_id": message_id
+            }), 200
+        else:
+            return jsonify({"error": "Message not found"}), 404
+
+    except Exception as e:
+        logger.error(f"Error processing message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/generate-response", methods=["POST"])
+def generate_response():
+    """
+    Generate AI response for a given message (to be used by human reviewer).
+    Example: POST /api/generate-response
+    Body: {"phone_number": "whatsapp:+31...", "message": "user message"}
+    """
+    try:
+        data = request.get_json()
+        phone_number = data.get('phone_number')
+        user_message = data.get('message')
+
+        if not phone_number or not user_message:
+            return jsonify({"error": "phone_number and message required"}), 400
+
+        # Get user's corpus
+        corpus = get_user_corpus(phone_number) or "No information yet."
 
         # System prompt defining Muze's persona
         system_prompt = f"""You are Muze, a personal biographer AI assistant. Your purpose is to understand the user deeply by engaging in meaningful conversations.
@@ -155,44 +285,14 @@ Respond naturally and ask one thoughtful follow-up question."""
 
         ai_response = response.text.strip()
 
-        # Update corpus asynchronously (in production, use a task queue)
-        update_corpus(user_message, ai_response)
-
-        return ai_response
-
-    except Exception as e:
-        logger.error(f"Error generating AI response: {str(e)}")
-        return "I'm having trouble processing that right now. Could you try again?"
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    """
-    Twilio webhook endpoint for incoming WhatsApp messages.
-    """
-    try:
-        # Get incoming message
-        incoming_msg = request.values.get('Body', '').strip()
-        from_number = request.values.get('From', '')
-
-        logger.info(f"Received message from {from_number}: {incoming_msg}")
-
-        # Generate AI response
-        ai_response = generate_ai_response(incoming_msg)
-
-        # Create Twilio response
-        resp = MessagingResponse()
-        resp.message(ai_response)
-
-        logger.info(f"Sending response: {ai_response}")
-
-        return str(resp)
+        return jsonify({
+            "response": ai_response,
+            "phone_number": phone_number
+        }), 200
 
     except Exception as e:
-        logger.error(f"Error in webhook: {str(e)}")
-        resp = MessagingResponse()
-        resp.message("Sorry, something went wrong. Please try again.")
-        return str(resp)
+        logger.error(f"Error generating response: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/health", methods=["GET"])
@@ -204,7 +304,19 @@ def health():
 @app.route("/", methods=["GET"])
 def home():
     """Root endpoint."""
-    return {"message": "Muze Personal Biographer API", "status": "running"}, 200
+    return {
+        "message": "Muze Personal Biographer API",
+        "status": "running",
+        "endpoints": {
+            "webhook": "/webhook (POST)",
+            "get_messages": "/api/users/<phone_number>/messages (GET)",
+            "get_corpus": "/api/users/<phone_number>/corpus (GET)",
+            "update_corpus": "/api/users/<phone_number>/corpus (PUT)",
+            "unprocessed_messages": "/api/messages/unprocessed (GET)",
+            "process_message": "/api/messages/<id>/process (POST)",
+            "generate_response": "/api/generate-response (POST)"
+        }
+    }, 200
 
 
 if __name__ == "__main__":
