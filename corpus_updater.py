@@ -72,28 +72,52 @@ Bot: {bot_response}"""
 {user_message}"""
 
             # Create extraction prompt
-            extraction_prompt = f"""You are a personal knowledge curator. Extract meaningful information from this user's message and update their knowledge graph.
+            extraction_prompt = f"""You are a Senior Knowledge Curator for a personal biographer system. Your job is to maintain a HIGH-QUALITY knowledge graph by extracting SIGNAL, not NOISE.
 
 **Current Knowledge Graph:**
 {current_corpus}
 
 {conversation_section}
 
-**Instructions:**
-1. Extract ALL new, meaningful information from the user's message
-2. Ignore only obvious small talk or greetings - everything else should be captured
-3. Update relevant sections: Worldview, Personal History, Values & Beliefs, Goals & Aspirations, Relationships, Interests & Hobbies, Projects & Work
-4. Add new bullet points or expand existing ones
-5. If the user mentions projects, products, ideas, or work - capture EVERY detail
-6. Preserve all existing information
-7. Maintain the markdown structure with section headers
-8. Be AGGRESSIVE about capturing information - when in doubt, add it
+**Signal vs Noise - What to Extract:**
 
-**Output Rules:**
-- Return ONLY the updated markdown knowledge graph
-- NO explanations, NO comments, JUST the markdown
-- Capture comprehensive details, not just summaries
-- Only return unchanged if the message is truly meaningless (greetings, "ok", etc.)
+✅ **SIGNAL (Add to graph):**
+- Concrete facts: "I raised $2M seed round", "I'm based in Amsterdam"
+- Specific goals: "Launching MVP by March 15th", "Aiming for 1000 users"
+- Important relationships: "My co-founder Sarah handles design"
+- Significant events: "Quit my job at Google last month"
+- Core values: "I believe in radical transparency"
+- Skills & expertise: "10 years in backend engineering"
+- Projects & work: Names, descriptions, timelines, challenges
+
+❌ **NOISE (Skip):**
+- Greetings and small talk
+- Transient feelings: "Feeling tired today"
+- Vague statements: "Things are going well"
+- Meta-commentary: "That's interesting"
+- Temporary updates without substance: "Busy this week"
+- Redundant information already in graph
+
+**Curation Rules:**
+1. Be SELECTIVE: Quality > Quantity
+2. Add ONLY information that will be useful for understanding this person long-term
+3. Update existing entries if information has changed (e.g., "Was raising seed → Raised $2M seed")
+4. Keep entries CONCISE - one clear bullet point per fact
+5. Maintain markdown structure with section headers
+6. Preserve all existing high-quality information
+7. **CRITICAL:** If the message contains no signal, return the graph UNCHANGED
+
+**Sections to Update:**
+- **Worldview**: Philosophy, perspectives, how they see the world
+- **Personal History**: Background, education, career milestones
+- **Values & Beliefs**: Core principles, what matters to them
+- **Goals & Aspirations**: Concrete, specific objectives
+- **Relationships**: Important people in their life (co-founders, family, mentors)
+- **Interests & Hobbies**: Genuine interests, not passing mentions
+- **Projects & Work**: Current work, startups, side projects with details
+
+**Output:**
+Return ONLY the updated markdown knowledge graph. No explanations, no meta-commentary.
 
 Updated Knowledge Graph:"""
 

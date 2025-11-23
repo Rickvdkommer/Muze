@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from sqlalchemy import create_engine, Column, String, Text, DateTime, Boolean, Integer, ForeignKey
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from dotenv import load_dotenv
@@ -24,6 +25,20 @@ class User(Base):
     display_name = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     last_message_at = Column(DateTime, default=datetime.utcnow)
+
+    # Active Intelligence Fields
+    timezone = Column(String(50), default='Europe/Amsterdam', nullable=False)
+    quiet_hours_start = Column(Integer, default=22, nullable=False)  # 10 PM
+    quiet_hours_end = Column(Integer, default=9, nullable=False)  # 9 AM
+    onboarding_step = Column(Integer, default=0, nullable=False)  # 0=New, 99=Complete
+    last_interaction_at = Column(DateTime, nullable=True)  # Last sent OR received message
+
+    # JSON Fields for State Management
+    open_loops = Column(JSONB, default={}, nullable=False)
+    # Structure: {"topic_name": {"status": "active", "last_updated": "ISO-DATE", "next_event_date": "ISO-DATE", "weight": 1-5}}
+
+    pending_questions = Column(JSONB, default=[], nullable=False)
+    # Structure: [{"question": "...", "weight": 5, "created_at": "..."}]
 
     # Relationships
     messages = relationship("Message", back_populates="user", cascade="all, delete-orphan")
@@ -259,6 +274,81 @@ def get_all_users():
     db = get_db()
     try:
         users = db.query(User).order_by(User.last_message_at.desc()).all()
+        return users
+    finally:
+        db.close()
+
+
+def get_user(phone_number):
+    """Get a user by phone number"""
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.phone_number == phone_number).first()
+        return user
+    finally:
+        db.close()
+
+
+def update_user_interaction(phone_number):
+    """Update last_interaction_at timestamp"""
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.phone_number == phone_number).first()
+        if user:
+            user.last_interaction_at = datetime.utcnow()
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def update_user_onboarding_step(phone_number, step):
+    """Update user's onboarding step"""
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.phone_number == phone_number).first()
+        if user:
+            user.onboarding_step = step
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def update_user_field(phone_number, **kwargs):
+    """Update specific user fields"""
+    db = get_db()
+    try:
+        user = db.query(User).filter(User.phone_number == phone_number).first()
+        if user:
+            for key, value in kwargs.items():
+                if hasattr(user, key):
+                    setattr(user, key, value)
+            db.commit()
+            return True
+        return False
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def get_users_for_dispatch():
+    """Get all users who have completed onboarding"""
+    db = get_db()
+    try:
+        users = db.query(User).filter(
+            User.onboarding_step == 99
+        ).all()
         return users
     finally:
         db.close()

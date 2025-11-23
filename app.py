@@ -15,11 +15,16 @@ from database import (
     get_unprocessed_messages,
     mark_message_processed,
     get_or_create_user,
-    get_all_users
+    get_all_users,
+    get_user,
+    update_user_interaction
 )
 from corpus_updater import CorpusUpdater
 from context_extractor import ContextExtractor
 from audio_transcriber import AudioTranscriber
+from onboarding_manager import OnboardingManager
+from state_manager import StateManager
+from scheduler_dispatcher import SchedulerDispatcher
 
 # Load environment variables
 load_dotenv()
@@ -49,14 +54,22 @@ CORS(app, resources={
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER", "whatsapp:+14155238886")
 
 # Initialize Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize Corpus Updater, Context Extractor, and Audio Transcriber
+# Initialize Twilio client
+from twilio.rest import Client as TwilioClient
+twilio_client = TwilioClient(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+
+# Initialize all AI modules
 corpus_updater = CorpusUpdater(client)
 context_extractor = ContextExtractor(client)
 audio_transcriber = AudioTranscriber(client)
+onboarding_manager = OnboardingManager(client)
+state_manager = StateManager(client)
+scheduler_dispatcher = SchedulerDispatcher(client, twilio_client, TWILIO_PHONE_NUMBER)
 
 
 # Initialize database on startup
@@ -76,14 +89,24 @@ def before_first_request():
 def webhook():
     """
     Twilio webhook endpoint for incoming WhatsApp messages.
-    Supports text, voice messages, and context requests.
-    Context requests auto-respond immediately, others go through human-in-the-loop.
+    Supports:
+    - Onboarding flow (3 steps)
+    - Voice message transcription
+    - Context requests (auto-respond)
+    - Active intelligence (open loops)
+    - Human-in-the-loop (admin dashboard)
     """
     try:
         # Get incoming message data
         from_number = request.values.get('From', '')
         incoming_msg = request.values.get('Body', '').strip()
         num_media = int(request.values.get('NumMedia', 0))
+
+        # Ensure user exists in database
+        user = get_or_create_user(from_number)
+
+        # Update last_interaction_at for pacing
+        update_user_interaction(from_number)
 
         logger.info(f"Received message from {from_number}: text='{incoming_msg}', media_count={num_media}")
 
@@ -116,6 +139,26 @@ def webhook():
 
         if not incoming_msg:
             incoming_msg = "[Empty message or unsupported media]"
+
+        # ONBOARDING FLOW: Route through onboarding if not complete
+        if user.onboarding_step < 99:
+            logger.info(f"User {from_number} in onboarding (step {user.onboarding_step})")
+
+            onboarding_response, is_complete = onboarding_manager.handle_onboarding(user, incoming_msg)
+
+            # Store incoming message
+            store_message(from_number, 'incoming', incoming_msg)
+
+            # Store and send onboarding response
+            store_message(from_number, 'outgoing', onboarding_response)
+
+            resp = MessagingResponse()
+            resp.message(onboarding_response)
+
+            logger.info(f"Onboarding response sent (step now: {user.onboarding_step})")
+            return str(resp)
+
+        # User has completed onboarding - proceed with normal flow
 
         # Check if this is a context request
         is_context_request, context_response = context_extractor.handle_context_request(
@@ -159,14 +202,37 @@ def webhook():
 
         logger.info(f"Message stored with ID: {message.id} - awaiting human review")
 
-        # Update corpus immediately after receiving message
-        # This makes context available for response generation
+        # ACTIVE INTELLIGENCE: Update corpus + open loops
         try:
-            # Use empty bot_response since we haven't responded yet
+            # Get current state
+            corpus = get_user_corpus(from_number) or ""
+            current_loops = user.open_loops or {}
+
+            # Update corpus (extract new information)
             corpus_updater.update_corpus(from_number, incoming_msg, "")
             logger.info(f"Corpus update triggered for {from_number}")
+
+            # Update open loops (detect events, close loops, detect decay)
+            updated_loops, cleanup_instructions = state_manager.update_open_loops(
+                from_number,
+                corpus,
+                incoming_msg,
+                current_loops
+            )
+
+            # Apply corpus cleanup if needed (Gardener Rule)
+            if cleanup_instructions:
+                updated_corpus = get_user_corpus(from_number)
+                cleaned_corpus = state_manager.apply_corpus_cleanup(
+                    from_number,
+                    updated_corpus,
+                    cleanup_instructions
+                )
+                update_user_corpus(from_number, cleaned_corpus)
+                logger.info(f"Applied {len(cleanup_instructions)} corpus cleanup actions")
+
         except Exception as e:
-            logger.error(f"Corpus update failed (non-critical): {str(e)}")
+            logger.error(f"Active intelligence update failed (non-critical): {str(e)}")
 
         # Return empty response (human-in-the-loop)
         resp = MessagingResponse()
@@ -464,6 +530,38 @@ def update_corpus_endpoint():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/cron/process-nudges", methods=["POST"])
+def process_nudges():
+    """
+    Cron endpoint for proactive nudges (Scheduler Dispatcher).
+    Should be called by an external cron service (e.g., cron-job.org, Railway Cron).
+
+    Security: Add authentication header check in production.
+    """
+    try:
+        logger.info("=== CRON: Process Nudges Triggered ===")
+
+        # Optional: Add security check
+        # auth_token = request.headers.get('X-Cron-Token')
+        # if auth_token != os.getenv('CRON_SECRET_TOKEN'):
+        #     return jsonify({"error": "Unauthorized"}), 401
+
+        # Run dispatcher
+        result = scheduler_dispatcher.process_dispatch_queue()
+
+        logger.info(f"=== CRON: Complete - Sent {result['sent']}, Skipped {result['skipped']} ===")
+
+        return jsonify({
+            "status": "success",
+            "sent": result['sent'],
+            "skipped": result['skipped']
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in cron endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint for Railway."""
@@ -474,16 +572,27 @@ def health():
 def home():
     """Root endpoint."""
     return {
-        "message": "Muze Personal Biographer API",
+        "message": "Muze Personal Biographer API - Active Intelligence Edition",
         "status": "running",
+        "version": "2.0.0",
+        "features": [
+            "Onboarding State Machine (3 steps)",
+            "Open Loop Tracking (future events, decaying topics)",
+            "Smart Dispatcher (proactive nudges)",
+            "Voice Message Transcription",
+            "Context Extraction",
+            "Human-in-the-Loop Dashboard"
+        ],
         "endpoints": {
             "webhook": "/webhook (POST)",
+            "cron_nudges": "/api/cron/process-nudges (POST)",
             "get_messages": "/api/users/<phone_number>/messages (GET)",
             "get_corpus": "/api/users/<phone_number>/corpus (GET)",
             "update_corpus": "/api/users/<phone_number>/corpus (PUT)",
             "unprocessed_messages": "/api/messages/unprocessed (GET)",
             "process_message": "/api/messages/<id>/process (POST)",
-            "generate_response": "/api/generate-response (POST)"
+            "generate_response": "/api/generate-response (POST)",
+            "health": "/health (GET)"
         }
     }, 200
 
