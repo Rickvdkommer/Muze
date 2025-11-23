@@ -25,6 +25,7 @@ from audio_transcriber import AudioTranscriber
 from onboarding_manager import OnboardingManager
 from state_manager import StateManager
 from scheduler_dispatcher import SchedulerDispatcher
+from scheduler import start_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -70,6 +71,9 @@ audio_transcriber = AudioTranscriber(client)
 onboarding_manager = OnboardingManager(client)
 state_manager = StateManager(client)
 scheduler_dispatcher = SchedulerDispatcher(client, twilio_client, TWILIO_PHONE_NUMBER)
+
+# Start background scheduler for proactive nudges
+start_scheduler()
 
 
 # Initialize database on startup
