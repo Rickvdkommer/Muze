@@ -17,6 +17,7 @@ from database import (
     get_or_create_user,
     get_all_users
 )
+from corpus_updater import CorpusUpdater
 
 # Load environment variables
 load_dotenv()
@@ -48,6 +49,9 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
 # Initialize Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
+
+# Initialize Corpus Updater
+corpus_updater = CorpusUpdater(client)
 
 
 # Initialize database on startup
@@ -335,6 +339,41 @@ Respond naturally and ask one thoughtful follow-up question."""
 
     except Exception as e:
         logger.error(f"Error generating response: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/update-corpus", methods=["POST"])
+def update_corpus_endpoint():
+    """
+    Update user's corpus after a conversation exchange.
+    Example: POST /api/update-corpus
+    Body: {"phone_number": "whatsapp:+31...", "user_message": "...", "bot_response": "..."}
+    """
+    try:
+        data = request.get_json()
+        phone_number = data.get('phone_number')
+        user_message = data.get('user_message')
+        bot_response = data.get('bot_response')
+
+        if not phone_number or not user_message or not bot_response:
+            return jsonify({"error": "phone_number, user_message, and bot_response required"}), 400
+
+        # Update corpus using the intelligent updater
+        success = corpus_updater.update_corpus(phone_number, user_message, bot_response)
+
+        if success:
+            return jsonify({
+                "message": "Corpus updated successfully",
+                "phone_number": phone_number
+            }), 200
+        else:
+            return jsonify({
+                "message": "No updates needed or update skipped",
+                "phone_number": phone_number
+            }), 200
+
+    except Exception as e:
+        logger.error(f"Error in corpus update endpoint: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 
