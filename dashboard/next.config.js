@@ -1,10 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
-  env: {
-    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
-    ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
-  },
+  // Next.js automatically handles environment variables
+  // NEXT_PUBLIC_* vars are available in browser
+  // Other vars are available server-side only
 }
 
 module.exports = nextConfig
