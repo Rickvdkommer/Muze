@@ -124,6 +124,15 @@ def webhook():
 
         logger.info(f"Message stored with ID: {message.id} - awaiting human review")
 
+        # Update corpus immediately after receiving message
+        # This makes context available for response generation
+        try:
+            # Use empty bot_response since we haven't responded yet
+            corpus_updater.update_corpus(from_number, incoming_msg, "")
+            logger.info(f"Corpus update triggered for {from_number}")
+        except Exception as e:
+            logger.error(f"Corpus update failed (non-critical): {str(e)}")
+
         # Return empty response (human-in-the-loop)
         resp = MessagingResponse()
         return str(resp)

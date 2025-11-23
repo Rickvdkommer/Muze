@@ -44,7 +44,7 @@ class CorpusUpdater:
         # Default: update if message is substantial (>50 chars)
         return len(user_message) > 50
 
-    def update_corpus(self, phone_number: str, user_message: str, bot_response: str) -> bool:
+    def update_corpus(self, phone_number: str, user_message: str, bot_response: str = "") -> bool:
         """
         Update user's corpus with insights from the latest conversation.
 
@@ -62,30 +62,38 @@ class CorpusUpdater:
                 logger.warning(f"No corpus found for {phone_number}")
                 return False
 
+            # Create extraction prompt (handle case with no bot response yet)
+            if bot_response:
+                conversation_section = f"""**New Conversation:**
+User: {user_message}
+Bot: {bot_response}"""
+            else:
+                conversation_section = f"""**New User Message:**
+{user_message}"""
+
             # Create extraction prompt
-            extraction_prompt = f"""You are a personal knowledge curator. Extract meaningful information from this conversation and update the user's knowledge graph.
+            extraction_prompt = f"""You are a personal knowledge curator. Extract meaningful information from this user's message and update their knowledge graph.
 
 **Current Knowledge Graph:**
 {current_corpus}
 
-**New Conversation:**
-User: {user_message}
-Bot: {bot_response}
+{conversation_section}
 
 **Instructions:**
-1. Extract ONLY new, meaningful information from the user's message
-2. Ignore small talk, greetings, or redundant information already in the graph
-3. Update relevant sections: Worldview, Personal History, Values & Beliefs, Goals & Aspirations, Relationships, Interests & Hobbies
-4. Keep entries concise - add bullet points or brief sentences
-5. If no new meaningful information, return the corpus UNCHANGED
+1. Extract ALL new, meaningful information from the user's message
+2. Ignore only obvious small talk or greetings - everything else should be captured
+3. Update relevant sections: Worldview, Personal History, Values & Beliefs, Goals & Aspirations, Relationships, Interests & Hobbies, Projects & Work
+4. Add new bullet points or expand existing ones
+5. If the user mentions projects, products, ideas, or work - capture EVERY detail
 6. Preserve all existing information
 7. Maintain the markdown structure with section headers
+8. Be AGGRESSIVE about capturing information - when in doubt, add it
 
 **Output Rules:**
 - Return ONLY the updated markdown knowledge graph
 - NO explanations, NO comments, JUST the markdown
-- Keep it concise - avoid bloat
-- If nothing to add, return the original corpus exactly as is
+- Capture comprehensive details, not just summaries
+- Only return unchanged if the message is truly meaningless (greetings, "ok", etc.)
 
 Updated Knowledge Graph:"""
 
@@ -94,8 +102,8 @@ Updated Knowledge Graph:"""
                 model='gemini-2.0-flash-exp',
                 contents=extraction_prompt,
                 config=types.GenerateContentConfig(
-                    temperature=0.3,  # Lower temperature for consistency
-                    max_output_tokens=800,  # Enough for corpus but not excessive
+                    temperature=0.5,  # Balanced for comprehensive extraction
+                    max_output_tokens=1200,  # Allow for detailed updates
                 )
             )
 

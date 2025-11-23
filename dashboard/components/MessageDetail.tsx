@@ -58,23 +58,8 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
       // Mark as processed
       await markMessageProcessed(message.id);
 
-      // Update corpus with this conversation (async, don't block UI)
-      try {
-        const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
-        await fetch(`${API_URL}/api/update-corpus`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone_number: message.phone_number,
-            user_message: message.text,
-            bot_response: editedResponse
-          })
-        });
-        console.log('Corpus update triggered');
-      } catch (corpusError) {
-        // Don't fail the whole operation if corpus update fails
-        console.error('Corpus update failed (non-critical):', corpusError);
-      }
+      // Note: Corpus update happens automatically when message is received,
+      // no need to trigger it here
 
       // Notify parent
       onProcessed();
