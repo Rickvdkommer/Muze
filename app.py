@@ -19,6 +19,7 @@ from database import (
 )
 from corpus_updater import CorpusUpdater
 from context_extractor import ContextExtractor
+from audio_transcriber import AudioTranscriber
 
 # Load environment variables
 load_dotenv()
@@ -46,14 +47,16 @@ CORS(app, resources={
 
 # Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 
 # Initialize Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize Corpus Updater and Context Extractor
+# Initialize Corpus Updater, Context Extractor, and Audio Transcriber
 corpus_updater = CorpusUpdater(client)
 context_extractor = ContextExtractor(client)
+audio_transcriber = AudioTranscriber(client)
 
 
 # Initialize database on startup
@@ -73,14 +76,46 @@ def before_first_request():
 def webhook():
     """
     Twilio webhook endpoint for incoming WhatsApp messages.
+    Supports text, voice messages, and context requests.
     Context requests auto-respond immediately, others go through human-in-the-loop.
     """
     try:
-        # Get incoming message
-        incoming_msg = request.values.get('Body', '').strip()
+        # Get incoming message data
         from_number = request.values.get('From', '')
+        incoming_msg = request.values.get('Body', '').strip()
+        num_media = int(request.values.get('NumMedia', 0))
 
-        logger.info(f"Received message from {from_number}: {incoming_msg}")
+        logger.info(f"Received message from {from_number}: text='{incoming_msg}', media_count={num_media}")
+
+        # Handle voice/audio messages
+        if num_media > 0:
+            media_url = request.values.get('MediaUrl0', '')
+            media_content_type = request.values.get('MediaContentType0', '')
+
+            logger.info(f"Media detected: {media_content_type} at {media_url}")
+
+            # Check if it's an audio file
+            if media_content_type and media_content_type.startswith('audio/'):
+                try:
+                    # Transcribe the voice message
+                    transcription = audio_transcriber.process_voice_message(media_url, media_content_type)
+
+                    # Combine transcription with any text caption
+                    if incoming_msg:
+                        incoming_msg = f"{incoming_msg}\n\n[Voice message transcription]: {transcription}"
+                    else:
+                        incoming_msg = f"[Voice message]: {transcription}"
+
+                    logger.info(f"Voice message transcribed successfully")
+
+                except Exception as e:
+                    logger.error(f"Voice transcription failed: {str(e)}")
+                    incoming_msg = incoming_msg or "[Voice message - transcription failed]"
+            else:
+                logger.info(f"Non-audio media received: {media_content_type} - skipping transcription")
+
+        if not incoming_msg:
+            incoming_msg = "[Empty message or unsupported media]"
 
         # Check if this is a context request
         is_context_request, context_response = context_extractor.handle_context_request(
