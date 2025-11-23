@@ -18,6 +18,7 @@ from database import (
     get_all_users
 )
 from corpus_updater import CorpusUpdater
+from context_extractor import ContextExtractor
 
 # Load environment variables
 load_dotenv()
@@ -50,8 +51,9 @@ TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 # Initialize Gemini client
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-# Initialize Corpus Updater
+# Initialize Corpus Updater and Context Extractor
 corpus_updater = CorpusUpdater(client)
+context_extractor = ContextExtractor(client)
 
 
 # Initialize database on startup
@@ -292,6 +294,19 @@ def generate_response():
         if not phone_number or not user_message:
             return jsonify({"error": "phone_number and message required"}), 400
 
+        # Check if this is a context request
+        is_context_request, context_response = context_extractor.handle_context_request(
+            phone_number, user_message
+        )
+
+        # If it's a context request, return the context
+        if is_context_request:
+            return jsonify({
+                "response": context_response,
+                "phone_number": phone_number
+            }), 200
+
+        # Otherwise, generate normal Muze response
         # Get user's corpus
         corpus = get_user_corpus(phone_number) or "No information yet."
 
