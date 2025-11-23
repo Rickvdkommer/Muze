@@ -1,6 +1,7 @@
 import os
 import logging
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 from twilio.twiml.messaging_response import MessagingResponse
 from google import genai
 from google.genai import types
@@ -25,6 +26,20 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Enable CORS for Vercel dashboard
+CORS(app, resources={
+    r"/api/*": {
+        "origins": [
+            "https://www.heymuze.app",
+            "https://heymuze.app",
+            "https://*.vercel.app",
+            "http://localhost:3000"  # For local development
+        ],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"]
+    }
+})
 
 # Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
