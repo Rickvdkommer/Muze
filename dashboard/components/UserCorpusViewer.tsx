@@ -195,7 +195,7 @@ export default function UserCorpusViewer() {
                   </div>
                 </div>
               ) : (
-                <div className="prose prose-sm max-w-none">
+                <div className="prose prose-sm max-w-none text-gray-900">
                   <ReactMarkdown>{corpus}</ReactMarkdown>
                 </div>
               )}

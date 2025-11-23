@@ -99,7 +99,7 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
       {showCorpus && (
         <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
           <h3 className="text-sm font-semibold text-gray-700 mb-2">User Knowledge Graph</h3>
-          <div className="prose prose-sm max-w-none bg-white rounded p-4 max-h-60 overflow-y-auto">
+          <div className="prose prose-sm max-w-none bg-white rounded p-4 max-h-60 overflow-y-auto text-gray-900">
             <ReactMarkdown>{corpus}</ReactMarkdown>
           </div>
         </div>
