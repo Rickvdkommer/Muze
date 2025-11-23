@@ -147,9 +147,13 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
           className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none resize-none text-gray-900 placeholder:text-gray-400"
           placeholder="Edit the AI response before sending..."
         />
-        <div className="mt-2 flex items-center justify-between text-sm text-gray-500">
-          <span>{editedResponse.length} characters</span>
-          <span>Max 1600 chars for WhatsApp</span>
+        <div className="mt-2 flex items-center justify-between text-sm">
+          <span className={editedResponse.length > 1600 ? 'text-red-600 font-semibold' : 'text-gray-500'}>
+            {editedResponse.length} / 1600 characters
+          </span>
+          {editedResponse.length > 1600 && (
+            <span className="text-red-600 font-semibold">⚠ Too long! Trim message</span>
+          )}
         </div>
       </div>
 
@@ -158,7 +162,7 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
         <div className="flex gap-3">
           <button
             onClick={handleSendResponse}
-            disabled={sending || !editedResponse.trim()}
+            disabled={sending || !editedResponse.trim() || editedResponse.length > 1600}
             className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {sending ? 'Sending...' : 'Send Response'}

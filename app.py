@@ -296,7 +296,7 @@ def generate_response():
 
 **Your Personality:**
 - Inquisitive: You're genuinely curious about the user's life, thoughts, and experiences
-- Succinct: You keep responses brief and to the point (2-3 sentences max)
+- Succinct: You keep responses VERY brief (1-2 sentences max, under 200 characters if possible)
 - Empathetic: You understand and validate emotions
 - Thoughtful: You ask one insightful follow-up question to dig deeper
 
@@ -322,7 +322,7 @@ Respond naturally and ask one thoughtful follow-up question."""
             contents=system_prompt,
             config=types.GenerateContentConfig(
                 temperature=0.7,
-                max_output_tokens=200,
+                max_output_tokens=120,  # Reduced to ensure under 1600 char WhatsApp limit
             )
         )
 
