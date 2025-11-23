@@ -562,6 +562,172 @@ def process_nudges():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/users/<phone_number>/details", methods=["GET"])
+def get_user_details(phone_number):
+    """
+    Get complete user details including settings and open loops.
+    Example: GET /api/users/whatsapp:+31634829116/details
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        from database import get_user
+        user = get_user(phone_number)
+
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        return jsonify({
+            "phone_number": user.phone_number,
+            "display_name": user.display_name,
+            "created_at": user.created_at.isoformat(),
+            "last_message_at": user.last_message_at.isoformat(),
+            "last_interaction_at": user.last_interaction_at.isoformat() if user.last_interaction_at else None,
+            "timezone": user.timezone,
+            "quiet_hours_start": user.quiet_hours_start,
+            "quiet_hours_end": user.quiet_hours_end,
+            "onboarding_step": user.onboarding_step,
+            "open_loops": user.open_loops,
+            "pending_questions": user.pending_questions
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error retrieving user details: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/users/<phone_number>/settings", methods=["PUT"])
+def update_user_settings(phone_number):
+    """
+    Update user settings (timezone, quiet hours, etc.).
+    Example: PUT /api/users/whatsapp:+31634829116/settings
+    Body: {"timezone": "America/New_York", "quiet_hours_start": 23, ...}
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        data = request.get_json()
+
+        from database import update_user_field
+        success = update_user_field(phone_number, **data)
+
+        if success:
+            return jsonify({
+                "message": "Settings updated successfully",
+                "phone_number": phone_number
+            }), 200
+        else:
+            return jsonify({"error": "User not found"}), 404
+
+    except Exception as e:
+        logger.error(f"Error updating user settings: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/users/<phone_number>/reset-corpus", methods=["POST"])
+def reset_user_corpus(phone_number):
+    """
+    Reset user's corpus to default template.
+    Example: POST /api/users/whatsapp:+31634829116/reset-corpus
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        from database import get_user
+        from datetime import datetime
+
+        user = get_user(phone_number)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        # Create fresh corpus template
+        fresh_corpus = f"""# Personal Knowledge Graph - {user.display_name or phone_number}
+
+## Worldview
+_No information yet._
+
+## Personal History
+_No information yet._
+
+## Values & Beliefs
+_No information yet._
+
+## Goals & Aspirations
+_No information yet._
+
+## Relationships
+_No information yet._
+
+## Interests & Hobbies
+_No information yet._
+
+## Projects & Work
+_No information yet._
+
+---
+_Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S UTC')}_
+"""
+
+        success = update_user_corpus(phone_number, fresh_corpus)
+
+        if success:
+            logger.info(f"✅ Corpus reset for {phone_number}")
+            return jsonify({
+                "message": "Corpus reset successfully",
+                "phone_number": phone_number
+            }), 200
+        else:
+            return jsonify({"error": "Failed to reset corpus"}), 500
+
+    except Exception as e:
+        logger.error(f"Error resetting corpus: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/users/<phone_number>/messages", methods=["DELETE"])
+def delete_user_messages(phone_number):
+    """
+    Delete all messages for a user.
+    Example: DELETE /api/users/whatsapp:+31634829116/messages
+    """
+    try:
+        # Add whatsapp: prefix if not present
+        if not phone_number.startswith('whatsapp:'):
+            phone_number = f'whatsapp:{phone_number}'
+
+        from database import get_db
+        from database import Message
+
+        db = get_db()
+        try:
+            count = db.query(Message).filter(Message.phone_number == phone_number).delete()
+            db.commit()
+
+            logger.info(f"✅ Deleted {count} messages for {phone_number}")
+
+            return jsonify({
+                "message": f"Deleted {count} messages",
+                "phone_number": phone_number,
+                "count": count
+            }), 200
+
+        except Exception as e:
+            db.rollback()
+            raise e
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error deleting messages: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/health", methods=["GET"])
 def health():
     """Health check endpoint for Railway."""

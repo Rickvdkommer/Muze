@@ -25,6 +25,16 @@ export interface User {
   last_message_at: string;
 }
 
+export interface UserDetails extends User {
+  last_interaction_at?: string;
+  timezone: string;
+  quiet_hours_start: number;
+  quiet_hours_end: number;
+  onboarding_step: number;
+  open_loops: Record<string, any>;
+  pending_questions: any[];
+}
+
 // Get unprocessed messages
 export async function getUnprocessedMessages(limit = 50): Promise<Message[]> {
   const response = await api.get(`/api/messages/unprocessed?limit=${limit}`);
@@ -85,6 +95,31 @@ export async function sendWhatsAppMessage(to: string, message: string): Promise<
     const error = await response.json();
     throw new Error(error.error || 'Failed to send message via Twilio');
   }
+}
+
+// Get complete user details (including settings and open loops)
+export async function getUserDetails(phoneNumber: string): Promise<UserDetails> {
+  const response = await api.get(`/api/users/${encodeURIComponent(phoneNumber)}/details`);
+  return response.data;
+}
+
+// Update user settings
+export async function updateUserSettings(
+  phoneNumber: string,
+  settings: Partial<Pick<UserDetails, 'timezone' | 'quiet_hours_start' | 'quiet_hours_end' | 'onboarding_step' | 'open_loops' | 'pending_questions' | 'display_name'>>
+): Promise<void> {
+  await api.put(`/api/users/${encodeURIComponent(phoneNumber)}/settings`, settings);
+}
+
+// Reset user corpus to default template
+export async function resetUserCorpus(phoneNumber: string): Promise<void> {
+  await api.post(`/api/users/${encodeURIComponent(phoneNumber)}/reset-corpus`);
+}
+
+// Delete all messages for a user
+export async function deleteUserMessages(phoneNumber: string): Promise<number> {
+  const response = await api.delete(`/api/users/${encodeURIComponent(phoneNumber)}/messages`);
+  return response.data.count;
 }
 
 export default api;

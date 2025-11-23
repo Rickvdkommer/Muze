@@ -13,7 +13,7 @@ import {
 } from '@/lib/api';
 import MessageQueue from './MessageQueue';
 import MessageDetail from './MessageDetail';
-import UserCorpusViewer from './UserCorpusViewer';
+import UserManagement from './UserManagement';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -155,7 +155,7 @@ export default function Dashboard({ onLogout }: DashboardProps) {
             </div>
           </div>
         ) : (
-          <UserCorpusViewer />
+          <UserManagement />
         )}
       </main>
     </div>
