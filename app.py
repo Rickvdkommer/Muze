@@ -25,7 +25,6 @@ from audio_transcriber import AudioTranscriber
 from onboarding_manager import OnboardingManager
 from state_manager import StateManager
 from scheduler_dispatcher import SchedulerDispatcher
-from scheduler import start_scheduler
 
 # Load environment variables
 load_dotenv()
@@ -71,9 +70,6 @@ audio_transcriber = AudioTranscriber(client)
 onboarding_manager = OnboardingManager(client)
 state_manager = StateManager(client)
 scheduler_dispatcher = SchedulerDispatcher(client, twilio_client, TWILIO_PHONE_NUMBER)
-
-# Start background scheduler for proactive nudges
-start_scheduler()
 
 
 # Initialize database on startup
@@ -545,10 +541,13 @@ def process_nudges():
     try:
         logger.info("=== CRON: Process Nudges Triggered ===")
 
-        # Optional: Add security check
-        # auth_token = request.headers.get('X-Cron-Token')
-        # if auth_token != os.getenv('CRON_SECRET_TOKEN'):
-        #     return jsonify({"error": "Unauthorized"}), 401
+        # Security check: Verify cron secret token
+        auth_token = request.headers.get('X-Cron-Secret')
+        expected_token = os.getenv('CRON_SECRET_TOKEN')
+
+        if expected_token and auth_token != expected_token:
+            logger.warning("⚠️ Unauthorized cron attempt - invalid token")
+            return jsonify({"error": "Unauthorized"}), 401
 
         # Run dispatcher
         result = scheduler_dispatcher.process_dispatch_queue()
