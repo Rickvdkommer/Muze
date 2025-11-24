@@ -22,7 +22,9 @@ from database import (
     get_user_corpus,
     update_user_field,
     store_message,
-    update_user_interaction
+    update_user_interaction,
+    create_pending_nudge,
+    check_existing_pending_nudge
 )
 from state_manager import StateManager
 
@@ -243,30 +245,25 @@ Generate the natural batched message now (just the message, nothing else):"""
 
     def process_dispatch_queue(self):
         """
-        Main cron job handler.
-        Check all users and send proactive messages where appropriate.
+        Main cron job handler - CREATES PENDING NUDGES for admin approval.
+        Does NOT send messages automatically.
 
         This is called by the /api/cron/process-nudges endpoint.
         """
-        logger.info("=== DISPATCH QUEUE PROCESSING STARTED ===")
+        logger.info("=== DISPATCH QUEUE PROCESSING STARTED (Creating Pending Nudges) ===")
 
         # Get all users who completed onboarding
         users = get_users_for_dispatch()
-        logger.info(f"Processing {len(users)} users for dispatch")
+        logger.info(f"Processing {len(users)} users for pending nudges")
 
-        sent_count = 0
+        created_count = 0
         skipped_count = 0
 
         for user in users:
             phone = user.phone_number
 
             try:
-                # 1. Check quiet hours
-                if self.is_quiet_hours(user):
-                    skipped_count += 1
-                    continue
-
-                # 2. Get user data
+                # 1. Get user data
                 open_loops = user.open_loops or {}
                 corpus = get_user_corpus(phone) or ""
 
@@ -275,13 +272,17 @@ Generate the natural batched message now (just the message, nothing else):"""
                     skipped_count += 1
                     continue
 
-                # 3. Generate candidate questions
+                # 2. Generate candidate questions
 
                 candidates = []  # List of (question, weight, topic) tuples
 
                 # Check for upcoming events (happening today or tomorrow)
                 upcoming = self.state_manager.get_upcoming_events(open_loops, days_ahead=2)
                 for topic, event_date, days_until in upcoming:
+                    # Skip if pending nudge already exists
+                    if check_existing_pending_nudge(phone, topic):
+                        continue
+
                     if days_until == 0:
                         question = f"Big day today - how did {topic} go?"
                         weight = 5
@@ -300,6 +301,10 @@ Generate the natural batched message now (just the message, nothing else):"""
                 # Check for decaying topics
                 decaying = self.state_manager.detect_decaying_loops(open_loops, days_threshold=7)
                 for topic in decaying:
+                    # Skip if pending nudge already exists
+                    if check_existing_pending_nudge(phone, topic):
+                        continue
+
                     loop_data = open_loops.get(topic, {})
                     question = self.state_manager.generate_check_in_question(
                         topic, loop_data, corpus
@@ -312,7 +317,7 @@ Generate the natural batched message now (just the message, nothing else):"""
                     skipped_count += 1
                     continue
 
-                # 4. Filter candidates
+                # 3. Filter candidates
 
                 # Sort by weight (highest first)
                 candidates.sort(key=lambda x: x[1], reverse=True)
@@ -322,6 +327,7 @@ Generate the natural batched message now (just the message, nothing else):"""
 
                 # Check pacing for highest weight
                 if not self.should_send_based_on_pacing(user, max_weight):
+                    logger.info(f"Pacing not met for {phone} (weight {max_weight}), skipping")
                     skipped_count += 1
                     continue
 
@@ -336,37 +342,76 @@ Generate the natural batched message now (just the message, nothing else):"""
                     skipped_count += 1
                     continue
 
-                # 5. Batch questions (max 3)
+                # 4. Create pending nudges (up to 3)
 
                 top_candidates = valid_candidates[:3]
-                questions_only = [q for q, w, t in top_candidates]
 
-                if len(questions_only) > 1:
-                    final_message = self.generate_batched_message(user, questions_only, corpus)
+                # Calculate scheduled send time
+                # Use weight-based pacing from last interaction
+                if user.last_interaction_at:
+                    last_interaction = user.last_interaction_at
                 else:
-                    final_message = questions_only[0]
+                    last_interaction = datetime.utcnow()
 
-                # 6. Send message
-
-                success = self.send_whatsapp_message(phone, final_message)
-
-                if success:
-                    # Store outgoing message
-                    store_message(phone, 'outgoing', final_message)
-
-                    # Update last_interaction_at
-                    update_user_interaction(phone)
-
-                    sent_count += 1
-                    logger.info(f"✅ Sent nudge to {phone}: {final_message[:50]}...")
-
+                # Weight-based pacing
+                weight = top_candidates[0][1]
+                if weight >= 5:
+                    hours_to_add = 4
+                elif weight >= 3:
+                    hours_to_add = 24
                 else:
-                    skipped_count += 1
+                    hours_to_add = 48
+
+                scheduled_time = last_interaction + timedelta(hours=hours_to_add)
+
+                # Ensure it's not in quiet hours
+                user_tz = pytz.timezone(user.timezone)
+                scheduled_time_user_tz = scheduled_time.replace(tzinfo=pytz.utc).astimezone(user_tz)
+
+                # If in quiet hours, move to end of quiet hours
+                if self.is_quiet_hours_at_time(user, scheduled_time_user_tz):
+                    scheduled_time_user_tz = scheduled_time_user_tz.replace(
+                        hour=user.quiet_hours_end,
+                        minute=0,
+                        second=0
+                    )
+                    # If that time has passed today, move to tomorrow
+                    if scheduled_time_user_tz < datetime.now(user_tz):
+                        scheduled_time_user_tz += timedelta(days=1)
+
+                    scheduled_time = scheduled_time_user_tz.astimezone(pytz.utc).replace(tzinfo=None)
+
+                # Create pending nudge for each candidate
+                for question, weight, topic in top_candidates:
+                    try:
+                        nudge = create_pending_nudge(
+                            phone_number=phone,
+                            topic=topic,
+                            weight=weight,
+                            message_text=question,
+                            scheduled_send_time=scheduled_time
+                        )
+                        created_count += 1
+                        logger.info(f"✅ Created pending nudge for {phone} on topic '{topic}'")
+                    except Exception as e:
+                        logger.error(f"Failed to create pending nudge for {phone}/{topic}: {str(e)}")
+                        continue
 
             except Exception as e:
                 logger.error(f"Error processing {phone}: {str(e)}")
                 skipped_count += 1
                 continue
 
-        logger.info(f"=== DISPATCH COMPLETE: Sent={sent_count}, Skipped={skipped_count} ===")
-        return {"sent": sent_count, "skipped": skipped_count}
+        logger.info(f"=== DISPATCH COMPLETE: Created={created_count}, Skipped={skipped_count} ===")
+        return {"sent": created_count, "skipped": skipped_count}
+
+    def is_quiet_hours_at_time(self, user, check_time):
+        """Check if a specific time is within quiet hours"""
+        hour = check_time.hour
+        quiet_start = user.quiet_hours_start
+        quiet_end = user.quiet_hours_end
+
+        if quiet_start > quiet_end:
+            return hour >= quiet_start or hour < quiet_end
+        else:
+            return quiet_start <= hour < quiet_end

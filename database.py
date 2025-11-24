@@ -81,6 +81,25 @@ class UserCorpus(Base):
         return f"<UserCorpus(phone_number='{self.phone_number}')>"
 
 
+class PendingNudge(Base):
+    """Pending nudge messages awaiting admin approval before sending"""
+    __tablename__ = "pending_nudges"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    phone_number = Column(String(50), ForeignKey("users.phone_number"), nullable=False)
+    topic = Column(String(200), nullable=False)  # The open loop topic this nudge is about
+    weight = Column(Integer, nullable=False)  # Priority weight (1-5)
+    message_text = Column(Text, nullable=False)  # Generated message text
+    scheduled_send_time = Column(DateTime, nullable=False)  # When to send if approved
+    status = Column(String(20), default='pending', nullable=False)  # pending, approved, sent, skipped
+    created_at = Column(DateTime, default=datetime.utcnow)
+    approved_at = Column(DateTime, nullable=True)
+    sent_at = Column(DateTime, nullable=True)
+
+    def __repr__(self):
+        return f"<PendingNudge(id={self.id}, phone_number='{self.phone_number}', topic='{self.topic}', status='{self.status}')>"
+
+
 def init_db():
     """Initialize database connection and create tables"""
     global engine, SessionLocal
@@ -350,5 +369,101 @@ def get_users_for_dispatch():
             User.onboarding_step == 99
         ).all()
         return users
+    finally:
+        db.close()
+
+
+# ===== Pending Nudge Functions =====
+
+def create_pending_nudge(phone_number, topic, weight, message_text, scheduled_send_time):
+    """Create a new pending nudge"""
+    db = get_db()
+    try:
+        nudge = PendingNudge(
+            phone_number=phone_number,
+            topic=topic,
+            weight=weight,
+            message_text=message_text,
+            scheduled_send_time=scheduled_send_time,
+            status='pending'
+        )
+        db.add(nudge)
+        db.commit()
+        db.refresh(nudge)
+        return nudge
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def get_pending_nudges(status=None, limit=50):
+    """Get pending nudges, optionally filtered by status"""
+    db = get_db()
+    try:
+        query = db.query(PendingNudge)
+        if status:
+            query = query.filter(PendingNudge.status == status)
+        nudges = query.order_by(PendingNudge.scheduled_send_time.asc()).limit(limit).all()
+        return nudges
+    finally:
+        db.close()
+
+
+def get_pending_nudge_by_id(nudge_id):
+    """Get a specific pending nudge by ID"""
+    db = get_db()
+    try:
+        nudge = db.query(PendingNudge).filter(PendingNudge.id == nudge_id).first()
+        return nudge
+    finally:
+        db.close()
+
+
+def update_pending_nudge(nudge_id, **kwargs):
+    """Update a pending nudge"""
+    db = get_db()
+    try:
+        nudge = db.query(PendingNudge).filter(PendingNudge.id == nudge_id).first()
+        if nudge:
+            for key, value in kwargs.items():
+                if hasattr(nudge, key):
+                    setattr(nudge, key, value)
+            db.commit()
+            db.refresh(nudge)
+            return nudge
+        return None
+    except Exception as e:
+        db.rollback()
+        raise e
+    finally:
+        db.close()
+
+
+def check_existing_pending_nudge(phone_number, topic):
+    """Check if a pending nudge already exists for this user/topic"""
+    db = get_db()
+    try:
+        nudge = db.query(PendingNudge).filter(
+            PendingNudge.phone_number == phone_number,
+            PendingNudge.topic == topic,
+            PendingNudge.status.in_(['pending', 'approved'])
+        ).first()
+        return nudge is not None
+    finally:
+        db.close()
+
+
+def get_approved_nudges_ready_to_send():
+    """Get approved nudges that are ready to be sent (scheduled_send_time has passed)"""
+    db = get_db()
+    try:
+        now = datetime.utcnow()
+        nudges = db.query(PendingNudge).filter(
+            PendingNudge.status == 'approved',
+            PendingNudge.scheduled_send_time <= now
+        ).all()
+        return nudges
     finally:
         db.close()
