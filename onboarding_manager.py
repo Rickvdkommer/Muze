@@ -128,40 +128,86 @@ class OnboardingManager:
 
     def parse_timezone(self, location_text: str) -> str:
         """
-        Parse timezone from user's location text.
+        Parse timezone from user's location text using Gemini AI.
 
         Args:
             location_text: User input like "Amsterdam", "New York", "PST", "Victoria, Pacific timezone", etc.
 
         Returns:
-            Timezone string (e.g., "Europe/Amsterdam")
+            Timezone string in IANA format (e.g., "Europe/Amsterdam", "America/Vancouver")
         """
         location_lower = location_text.lower().strip()
 
         # Direct timezone format (e.g., "Europe/Amsterdam")
         if '/' in location_text and len(location_text.split('/')) == 2:
-            return location_text
+            # Validate it's a real timezone
+            try:
+                import pytz
+                pytz.timezone(location_text)
+                return location_text
+            except:
+                pass  # Fall through to Gemini parsing
 
-        # Check exact match first
-        if location_lower in TIMEZONE_MAP:
-            return TIMEZONE_MAP[location_lower]
+        # Use Gemini to parse timezone
+        try:
+            timezone_prompt = f"""Convert the following location/timezone description to a standard IANA timezone string.
 
-        # Try matching individual words (handles "Victoria, Pacific timezone" → checks "victoria", "pacific", "timezone")
-        words = location_lower.replace(',', ' ').split()
-        for word in words:
-            if word in TIMEZONE_MAP:
-                logger.info(f"Matched timezone keyword '{word}' in '{location_text}'")
-                return TIMEZONE_MAP[word]
+User input: "{location_text}"
 
-        # Try partial matches in TIMEZONE_MAP keys (e.g., "SF" matches "san francisco")
-        for city, tz in TIMEZONE_MAP.items():
-            if location_lower in city or city in location_lower:
-                logger.info(f"Partial match: '{location_text}' matched to '{city}'")
-                return tz
+Return ONLY a valid IANA timezone string (e.g., "America/Vancouver", "Europe/London", "Asia/Tokyo").
 
-        # Default fallback
-        logger.warning(f"Could not parse timezone from '{location_text}', using default Europe/Amsterdam")
-        return 'Europe/Amsterdam'
+Rules:
+- Use the IANA timezone database format: Continent/City
+- For cities, use the most specific timezone (e.g., "Victoria, BC" → "America/Vancouver")
+- For timezone abbreviations (PST, EST, etc.), use the most common city in that timezone
+- For ambiguous inputs, prefer major cities
+- If completely unable to determine, return "Europe/Amsterdam"
+
+Examples:
+- "New York" → "America/New_York"
+- "PST" → "America/Los_Angeles"
+- "Victoria, Pacific timezone" → "America/Vancouver"
+- "Amsterdam" → "Europe/Amsterdam"
+- "Tokyo" → "Asia/Tokyo"
+
+Return ONLY the timezone string, nothing else:"""
+
+            response = self.client.models.generate_content(
+                model='gemini-2.0-flash-exp',
+                contents=timezone_prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.1,  # Low temperature for consistent output
+                    max_output_tokens=50,
+                )
+            )
+
+            parsed_timezone = response.text.strip().strip('"').strip("'")
+
+            # Validate the timezone is real
+            import pytz
+            pytz.timezone(parsed_timezone)
+
+            logger.info(f"✅ Gemini parsed '{location_text}' → '{parsed_timezone}'")
+            return parsed_timezone
+
+        except Exception as e:
+            logger.warning(f"Gemini timezone parsing failed for '{location_text}': {str(e)}")
+
+            # Fallback to manual map for common cases
+            if location_lower in TIMEZONE_MAP:
+                logger.info(f"Fallback: Using manual map for '{location_text}'")
+                return TIMEZONE_MAP[location_lower]
+
+            # Try matching individual words
+            words = location_lower.replace(',', ' ').split()
+            for word in words:
+                if word in TIMEZONE_MAP:
+                    logger.info(f"Fallback: Matched word '{word}' in '{location_text}'")
+                    return TIMEZONE_MAP[word]
+
+            # Final fallback
+            logger.warning(f"Using default timezone Europe/Amsterdam for '{location_text}'")
+            return 'Europe/Amsterdam'
 
     def extract_goals_from_text(self, goals_text: str) -> list:
         """
