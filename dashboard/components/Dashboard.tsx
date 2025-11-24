@@ -14,6 +14,7 @@ import {
 import MessageQueue from './MessageQueue';
 import MessageDetail from './MessageDetail';
 import UserManagement from './UserManagement';
+import PendingNudges from './PendingNudges';
 
 interface DashboardProps {
   onLogout: () => void;
@@ -133,25 +134,31 @@ export default function Dashboard({ onLogout }: DashboardProps) {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {activeTab === 'queue' ? (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            <div>
-              <MessageQueue
-                messages={messages}
-                selectedMessage={selectedMessage}
-                onSelect={handleMessageSelect}
-              />
-            </div>
-            <div>
-              {selectedMessage ? (
-                <MessageDetail
-                  message={selectedMessage}
-                  onProcessed={handleMessageProcessed}
+          <div>
+            {/* Pending Nudges Section */}
+            <PendingNudges />
+
+            {/* Message Queue */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div>
+                <MessageQueue
+                  messages={messages}
+                  selectedMessage={selectedMessage}
+                  onSelect={handleMessageSelect}
                 />
-              ) : (
-                <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
-                  Select a message to view details and respond
-                </div>
-              )}
+              </div>
+              <div>
+                {selectedMessage ? (
+                  <MessageDetail
+                    message={selectedMessage}
+                    onProcessed={handleMessageProcessed}
+                  />
+                ) : (
+                  <div className="bg-white rounded-lg shadow p-8 text-center text-gray-500">
+                    Select a message to view details and respond
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         ) : (

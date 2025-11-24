@@ -122,4 +122,35 @@ export async function deleteUserMessages(phoneNumber: string): Promise<number> {
   return response.data.count;
 }
 
+// ===== Pending Nudges =====
+
+export interface PendingNudge {
+  id: number;
+  phone_number: string;
+  display_name?: string;
+  topic: string;
+  weight: number;
+  message_text: string;
+  scheduled_send_time: string;
+  status: string;
+  created_at: string;
+}
+
+export async function getPendingNudges(): Promise<PendingNudge[]> {
+  const response = await api.get('/api/pending-nudges');
+  return response.data.nudges;
+}
+
+export async function updatePendingNudge(nudgeId: number, message_text: string): Promise<void> {
+  await api.put(`/api/pending-nudges/${nudgeId}`, { message_text });
+}
+
+export async function approvePendingNudge(nudgeId: number): Promise<void> {
+  await api.post(`/api/pending-nudges/${nudgeId}/approve`);
+}
+
+export async function skipPendingNudge(nudgeId: number): Promise<void> {
+  await api.post(`/api/pending-nudges/${nudgeId}/skip`);
+}
+
 export default api;
