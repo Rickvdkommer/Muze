@@ -10,13 +10,14 @@ import {
   updateUserSettings,
   resetUserCorpus,
   deleteUserMessages,
+  sendWhatsAppMessage,
   User,
   UserDetails
 } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 
-type Tab = 'corpus' | 'settings' | 'loops' | 'messages';
+type Tab = 'corpus' | 'settings' | 'loops' | 'messages' | 'send';
 
 export default function UserManagement() {
   const [users, setUsers] = useState<User[]>([]);
@@ -40,6 +41,10 @@ export default function UserManagement() {
   // Messages state
   const [messages, setMessages] = useState<any[]>([]);
   const [messageCount, setMessageCount] = useState(0);
+
+  // Send message state
+  const [manualMessage, setManualMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
   // UI state
   const [loading, setLoading] = useState(true);
@@ -187,11 +192,38 @@ export default function UserManagement() {
     }
   };
 
+  const handleSendManualMessage = async () => {
+    if (!selectedUser || !manualMessage.trim()) return;
+
+    if (!confirm(`Send this message to ${userDetails?.display_name || selectedUser.phone_number}?`)) {
+      return;
+    }
+
+    setSending(true);
+    try {
+      await sendWhatsAppMessage(selectedUser.phone_number, manualMessage);
+      alert('Message sent successfully!');
+      setManualMessage('');
+      // Reload messages to show the sent message
+      if (selectedUser) {
+        const updatedMessages = await getUserMessages(selectedUser.phone_number, 1000);
+        setMessages(updatedMessages);
+        setMessageCount(updatedMessages.length);
+      }
+    } catch (error) {
+      console.error('Failed to send message:', error);
+      alert('Failed to send message. Please try again.');
+    } finally {
+      setSending(false);
+    }
+  };
+
   const tabs: { id: Tab; label: string; icon: string }[] = [
     { id: 'corpus', label: 'Knowledge Graph', icon: '📚' },
     { id: 'settings', label: 'Settings', icon: '⚙️' },
     { id: 'loops', label: 'Open Loops', icon: '🔄' },
     { id: 'messages', label: 'Messages', icon: '💬' },
+    { id: 'send', label: 'Send Message', icon: '📤' },
   ];
 
   if (loading && users.length === 0) {
@@ -647,6 +679,68 @@ export default function UserManagement() {
                           ))}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Send Message Tab */}
+                  {activeTab === 'send' && selectedUser && (
+                    <div className="bg-gradient-to-br from-green-50 to-emerald-50 rounded-xl border-2 border-green-200 p-6">
+                      <div className="flex items-center gap-3 mb-6">
+                        <div className="w-12 h-12 bg-green-500 rounded-lg flex items-center justify-center shadow-sm">
+                          <span className="text-2xl">📤</span>
+                        </div>
+                        <div>
+                          <h4 className="text-xl font-bold text-gray-900">Send Manual Message</h4>
+                          <p className="text-sm text-green-700">
+                            Sending to: <span className="font-semibold">{userDetails?.display_name || selectedUser.phone_number}</span>
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="bg-white rounded-lg border-2 border-green-300 p-4 shadow-sm">
+                        <label className="block text-sm font-bold text-gray-900 mb-2">
+                          ✏️ Message Content
+                        </label>
+                        <textarea
+                          value={manualMessage}
+                          onChange={(e) => setManualMessage(e.target.value)}
+                          rows={8}
+                          className="w-full px-4 py-3 border-2 border-green-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none resize-none text-gray-900 placeholder:text-gray-400 shadow-sm"
+                          placeholder="Type your message here..."
+                        />
+                        <div className="mt-3 flex items-center justify-between text-sm">
+                          <span className={manualMessage.length > 1600 ? 'text-red-600 font-bold' : 'text-green-600 font-semibold'}>
+                            {manualMessage.length} / 1600 characters
+                          </span>
+                          {manualMessage.length > 1600 && (
+                            <span className="text-red-600 font-bold">⚠ Too long! Trim message</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-6 flex gap-3">
+                        <button
+                          onClick={handleSendManualMessage}
+                          disabled={sending || !manualMessage.trim() || manualMessage.length > 1600}
+                          className="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold py-4 px-6 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed shadow-md text-lg"
+                        >
+                          {sending ? '⏳ Sending...' : '📤 Send Message'}
+                        </button>
+                        <button
+                          onClick={() => setManualMessage('')}
+                          disabled={sending || !manualMessage}
+                          className="px-6 py-4 bg-white border-2 border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition disabled:opacity-50 shadow-sm"
+                        >
+                          🗑️ Clear
+                        </button>
+                      </div>
+
+                      <div className="mt-6 p-4 bg-white border-2 border-green-300 rounded-lg shadow-sm">
+                        <p className="text-sm text-gray-700 leading-relaxed">
+                          <strong className="text-green-700">💡 Tip:</strong> This message will be sent immediately via WhatsApp.
+                          The message will also be stored in the conversation history and the corpus will be updated automatically when the user replies.
+                        </p>
+                      </div>
                     </div>
                   )}
                 </>
