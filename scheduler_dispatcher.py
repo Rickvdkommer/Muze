@@ -415,3 +415,47 @@ Generate the natural batched message now (just the message, nothing else):"""
             return hour >= quiet_start or hour < quiet_end
         else:
             return quiet_start <= hour < quiet_end
+
+
+    def send_approved_nudges(self):
+        """
+        Send all approved nudges that are ready (scheduled_send_time has passed).
+        This should be called frequently (e.g., every 5-10 minutes) to send approved messages.
+        """
+        from database import get_approved_nudges_ready_to_send, update_pending_nudge
+        
+        logger.info("=== CHECKING FOR APPROVED NUDGES TO SEND ===")
+        
+        nudges = get_approved_nudges_ready_to_send()
+        sent_count = 0
+        failed_count = 0
+        
+        for nudge in nudges:
+            try:
+                # Send the message
+                success = self.send_whatsapp_message(nudge.phone_number, nudge.message_text)
+                
+                if success:
+                    # Store as outgoing message
+                    store_message(nudge.phone_number, "outgoing", nudge.message_text)
+                    
+                    # Update last_interaction_at
+                    update_user_interaction(nudge.phone_number)
+                    
+                    # Mark nudge as sent
+                    update_pending_nudge(nudge.id, status="sent", sent_at=datetime.utcnow())
+                    
+                    sent_count += 1
+                    logger.info(f"✅ Sent approved nudge #{nudge.id} to {nudge.phone_number}")
+                else:
+                    failed_count += 1
+                    logger.error(f"❌ Failed to send nudge #{nudge.id}")
+                    
+            except Exception as e:
+                logger.error(f"Error sending nudge #{nudge.id}: {str(e)}")
+                failed_count += 1
+                continue
+        
+        logger.info(f"=== APPROVED NUDGES SENT: {sent_count} sent, {failed_count} failed ===")
+        return {"sent": sent_count, "failed": failed_count}
+

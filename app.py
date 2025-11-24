@@ -566,6 +566,165 @@ def process_nudges():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/cron/send-approved-nudges", methods=["POST"])
+def send_approved_nudges():
+    """
+    Send approved nudges that are ready (scheduled_send_time has passed).
+    Should be called frequently (e.g., every 5-10 minutes).
+    """
+    try:
+        logger.info("=== CRON: Send Approved Nudges Triggered ===")
+
+        # Security check: Verify cron secret token
+        auth_token = request.headers.get('X-Cron-Secret')
+        expected_token = os.getenv('CRON_SECRET_TOKEN')
+
+        if expected_token and auth_token != expected_token:
+            logger.warning("⚠️ Unauthorized cron attempt - invalid token")
+            return jsonify({"error": "Unauthorized"}), 401
+
+        # Send approved nudges
+        result = scheduler_dispatcher.send_approved_nudges()
+
+        logger.info(f"=== CRON: Complete - Sent {result['sent']}, Failed {result['failed']} ===")
+
+        return jsonify({
+            "status": "success",
+            "sent": result['sent'],
+            "failed": result['failed']
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error in send-approved-nudges endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/pending-nudges", methods=["GET"])
+def get_pending_nudges_endpoint():
+    """
+    Get all pending nudges (status=pending).
+    Example: GET /api/pending-nudges
+    """
+    try:
+        from database import get_pending_nudges, get_user
+
+        nudges = get_pending_nudges(status='pending')
+
+        # Format for frontend
+        result = []
+        for nudge in nudges:
+            user = get_user(nudge.phone_number)
+            result.append({
+                "id": nudge.id,
+                "phone_number": nudge.phone_number,
+                "display_name": user.display_name if user else None,
+                "topic": nudge.topic,
+                "weight": nudge.weight,
+                "message_text": nudge.message_text,
+                "scheduled_send_time": nudge.scheduled_send_time.isoformat(),
+                "status": nudge.status,
+                "created_at": nudge.created_at.isoformat()
+            })
+
+        return jsonify({
+            "nudges": result,
+            "count": len(result)
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error getting pending nudges: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/pending-nudges/<int:nudge_id>", methods=["PUT"])
+def update_pending_nudge_endpoint(nudge_id):
+    """
+    Update a pending nudge (e.g., edit message text).
+    Example: PUT /api/pending-nudges/123
+    Body: {"message_text": "Updated message..."}
+    """
+    try:
+        from database import update_pending_nudge
+
+        data = request.get_json()
+        message_text = data.get('message_text')
+
+        if not message_text:
+            return jsonify({"error": "message_text required"}), 400
+
+        nudge = update_pending_nudge(nudge_id, message_text=message_text)
+
+        if not nudge:
+            return jsonify({"error": "Nudge not found"}), 404
+
+        return jsonify({
+            "message": "Nudge updated successfully",
+            "nudge_id": nudge_id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error updating nudge: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/pending-nudges/<int:nudge_id>/approve", methods=["POST"])
+def approve_pending_nudge(nudge_id):
+    """
+    Approve a pending nudge.
+    Example: POST /api/pending-nudges/123/approve
+    """
+    try:
+        from database import update_pending_nudge
+        from datetime import datetime
+
+        nudge = update_pending_nudge(
+            nudge_id,
+            status='approved',
+            approved_at=datetime.utcnow()
+        )
+
+        if not nudge:
+            return jsonify({"error": "Nudge not found"}), 404
+
+        logger.info(f"✅ Nudge #{nudge_id} approved by admin")
+
+        return jsonify({
+            "message": "Nudge approved",
+            "nudge_id": nudge_id,
+            "scheduled_send_time": nudge.scheduled_send_time.isoformat()
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error approving nudge: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/pending-nudges/<int:nudge_id>/skip", methods=["POST"])
+def skip_pending_nudge(nudge_id):
+    """
+    Skip (reject) a pending nudge.
+    Example: POST /api/pending-nudges/123/skip
+    """
+    try:
+        from database import update_pending_nudge
+
+        nudge = update_pending_nudge(nudge_id, status='skipped')
+
+        if not nudge:
+            return jsonify({"error": "Nudge not found"}), 404
+
+        logger.info(f"⏭️ Nudge #{nudge_id} skipped by admin")
+
+        return jsonify({
+            "message": "Nudge skipped",
+            "nudge_id": nudge_id
+        }), 200
+
+    except Exception as e:
+        logger.error(f"Error skipping nudge: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/users/<phone_number>/details", methods=["GET"])
 def get_user_details(phone_number):
     """
