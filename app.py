@@ -418,6 +418,41 @@ def process_message(message_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/messages", methods=["POST"])
+def store_message_endpoint():
+    """
+    Store a message in the database (for manually sent messages).
+    Example: POST /api/messages
+    Body: {"phone_number": "whatsapp:+31634829116", "direction": "outgoing", "message_text": "Hello"}
+    """
+    try:
+        data = request.get_json()
+        phone_number = data.get('phone_number')
+        direction = data.get('direction')
+        message_text = data.get('message_text')
+
+        if not phone_number or not direction or not message_text:
+            return jsonify({"error": "Missing required fields: phone_number, direction, message_text"}), 400
+
+        if direction not in ['incoming', 'outgoing']:
+            return jsonify({"error": "Invalid direction. Must be 'incoming' or 'outgoing'"}), 400
+
+        # Store the message
+        message = store_message(phone_number, direction, message_text)
+
+        return jsonify({
+            "message": "Message stored successfully",
+            "id": message.id,
+            "phone_number": message.phone_number,
+            "direction": message.direction,
+            "timestamp": message.timestamp.isoformat()
+        }), 201
+
+    except Exception as e:
+        logger.error(f"Error storing message: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/generate-response", methods=["POST"])
 def generate_response():
     """

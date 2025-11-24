@@ -50,6 +50,26 @@ export async function POST(request: NextRequest) {
     }
 
     const data = await response.json();
+
+    // Store the message in the database
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
+    try {
+      await fetch(`${backendUrl}/api/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          phone_number: to,
+          direction: 'outgoing',
+          message_text: message,
+        }),
+      });
+    } catch (dbError) {
+      console.error('Failed to store message in database:', dbError);
+      // Don't fail the request if database storage fails - message was still sent
+    }
+
     return NextResponse.json({ success: true, messageId: data.sid });
 
   } catch (error) {

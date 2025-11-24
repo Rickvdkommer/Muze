@@ -130,6 +130,21 @@ export default function UserManagement() {
     }
   };
 
+  const handleRefreshMessages = async () => {
+    if (!selectedUser) return;
+    setSaving(true);
+    try {
+      const updatedMessages = await getUserMessages(selectedUser.phone_number, 1000);
+      setMessages(updatedMessages);
+      setMessageCount(updatedMessages.length);
+    } catch (error) {
+      console.error('Failed to refresh messages:', error);
+      alert('Failed to refresh messages.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleDeleteMessages = async () => {
     if (!selectedUser) return;
     if (!confirm(`Are you sure you want to delete ALL ${messageCount} messages? This cannot be undone.`)) {
@@ -631,13 +646,22 @@ export default function UserManagement() {
                           <h4 className="text-lg font-semibold text-gray-900">Conversation History</h4>
                           <p className="text-sm text-gray-500">Total messages: {messageCount}</p>
                         </div>
-                        <button
-                          onClick={handleDeleteMessages}
-                          disabled={saving || messageCount === 0}
-                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50 text-sm"
-                        >
-                          {saving ? 'Deleting...' : 'Delete All'}
-                        </button>
+                        <div className="flex gap-3">
+                          <button
+                            onClick={handleRefreshMessages}
+                            disabled={saving}
+                            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg disabled:opacity-50 text-sm"
+                          >
+                            {saving ? 'Refreshing...' : '🔄 Refresh'}
+                          </button>
+                          <button
+                            onClick={handleDeleteMessages}
+                            disabled={saving || messageCount === 0}
+                            className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50 text-sm"
+                          >
+                            {saving ? 'Deleting...' : 'Delete All'}
+                          </button>
+                        </div>
                       </div>
 
                       {messages.length === 0 ? (
