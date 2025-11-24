@@ -327,7 +327,7 @@ Generate the JSON array now:"""
 
         # Step 0: Ask for name
         if step == 0:
-            response = "Hi! I'm Muze, your personal biographer. First, what should I call you?"
+            response = "Hi! I'm Muze. I'm here to build your Personal Knowledge Graph. First, what should I call you?"
             # Move to next step
             update_user_onboarding_step(phone_number, 1)
             return response, False
