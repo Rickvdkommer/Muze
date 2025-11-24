@@ -146,10 +146,11 @@ def webhook():
 
             onboarding_response, is_complete = onboarding_manager.handle_onboarding(user, incoming_msg)
 
-            # Store incoming message
-            store_message(from_number, 'incoming', incoming_msg)
+            # Store incoming message and mark as processed (onboarding handled it)
+            incoming_message = store_message(from_number, 'incoming', incoming_msg)
+            mark_message_processed(incoming_message.id)
 
-            # Store and send onboarding response
+            # Store outgoing response
             store_message(from_number, 'outgoing', onboarding_response)
 
             resp = MessagingResponse()

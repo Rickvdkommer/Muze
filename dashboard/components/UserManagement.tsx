@@ -37,10 +37,13 @@ export default function UserManagement() {
   const [editedLoops, setEditedLoops] = useState<Record<string, any>>({});
   const [editingLoops, setEditingLoops] = useState(false);
 
+  // Messages state
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messageCount, setMessageCount] = useState(0);
+
   // UI state
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [messageCount, setMessageCount] = useState(0);
 
   useEffect(() => {
     loadUsers();
@@ -73,6 +76,7 @@ export default function UserManagement() {
       setUserDetails(details);
       setEditedSettings(details);
       setEditedLoops(details.open_loops || {});
+      setMessages(messages);
       setMessageCount(messages.length);
       setEditingCorpus(false);
       setEditingSettings(false);
@@ -130,6 +134,7 @@ export default function UserManagement() {
     setSaving(true);
     try {
       const count = await deleteUserMessages(selectedUser.phone_number);
+      setMessages([]);
       setMessageCount(0);
       alert(`Deleted ${count} messages successfully!`);
     } catch (error) {
@@ -519,23 +524,59 @@ export default function UserManagement() {
                   {/* Messages Tab */}
                   {activeTab === 'messages' && (
                     <div>
-                      <div className="mb-6">
-                        <h4 className="text-lg font-semibold text-gray-900 mb-2">Message Management</h4>
-                        <p className="text-sm text-gray-500 mb-4">Total messages: {messageCount}</p>
+                      <div className="flex justify-between items-center mb-6">
+                        <div>
+                          <h4 className="text-lg font-semibold text-gray-900">Conversation History</h4>
+                          <p className="text-sm text-gray-500">Total messages: {messageCount}</p>
+                        </div>
                         <button
                           onClick={handleDeleteMessages}
                           disabled={saving || messageCount === 0}
-                          className="px-6 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg disabled:opacity-50"
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg disabled:opacity-50 text-sm"
                         >
-                          {saving ? 'Deleting...' : 'Delete All Messages'}
+                          {saving ? 'Deleting...' : 'Delete All'}
                         </button>
                       </div>
 
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <p className="text-sm text-yellow-800">
-                          ⚠️ <strong>Warning:</strong> Deleting messages cannot be undone. The message history will be permanently removed from the database.
-                        </p>
-                      </div>
+                      {messages.length === 0 ? (
+                        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center text-gray-500">
+                          No messages yet
+                        </div>
+                      ) : (
+                        <div className="space-y-4 max-h-[600px] overflow-y-auto bg-gray-50 border border-gray-200 rounded-lg p-4">
+                          {messages.map((msg) => (
+                            <div
+                              key={msg.id}
+                              className={`flex ${msg.direction === 'outgoing' ? 'justify-end' : 'justify-start'}`}
+                            >
+                              <div
+                                className={`max-w-[70%] rounded-lg px-4 py-3 ${
+                                  msg.direction === 'outgoing'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-gray-900 border border-gray-200'
+                                }`}
+                              >
+                                <p className="text-sm whitespace-pre-wrap break-words">{msg.text}</p>
+                                <p
+                                  className={`text-xs mt-2 ${
+                                    msg.direction === 'outgoing' ? 'text-blue-100' : 'text-gray-500'
+                                  }`}
+                                >
+                                  {new Date(msg.timestamp).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                  {msg.direction === 'incoming' && !msg.processed && (
+                                    <span className="ml-2 text-yellow-600 font-medium">• Pending</span>
+                                  )}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </>
