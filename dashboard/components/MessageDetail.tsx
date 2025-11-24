@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Message, generateAIResponse, sendWhatsAppMessage, markMessageProcessed, getUserCorpus } from '@/lib/api';
+import { Message, generateAIResponse, sendWhatsAppMessage, markMessageProcessed, getUserCorpus, updateCorpusFromMessage } from '@/lib/api';
 import { formatDistanceToNow } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 
@@ -77,6 +77,25 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
       onProcessed();
     } catch (error) {
       console.error('Failed to skip message:', error);
+    }
+  };
+
+  const handleProcessWithoutResponse = async () => {
+    setSending(true);
+    try {
+      // Update corpus from the user's message
+      await updateCorpusFromMessage(message.phone_number, message.text, '');
+
+      // Mark as processed
+      await markMessageProcessed(message.id);
+
+      // Notify parent
+      onProcessed();
+    } catch (error) {
+      console.error('Failed to process message:', error);
+      alert('Failed to process message. Please try again.');
+    } finally {
+      setSending(false);
     }
   };
 
@@ -162,7 +181,7 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
 
       {/* Actions */}
       <div className="px-6 py-4 bg-gray-50">
-        <div className="flex gap-3">
+        <div className="flex gap-3 mb-3">
           <button
             onClick={handleSendResponse}
             disabled={sending || !editedResponse.trim() || editedResponse.length > 1600}
@@ -171,14 +190,26 @@ export default function MessageDetail({ message, onProcessed }: MessageDetailPro
             {sending ? 'Sending...' : 'Send Response'}
           </button>
           <button
-            onClick={handleSkip}
-            className="px-6 py-3 bg-white border border-gray-300 text-gray-700 font-semibold rounded-lg hover:bg-gray-50 transition"
+            onClick={handleProcessWithoutResponse}
+            disabled={sending}
+            className="flex-1 bg-green-600 hover:bg-green-700 text-white font-semibold py-3 px-4 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Skip
+            {sending ? 'Processing...' : 'Process & Update Corpus'}
+          </button>
+        </div>
+        <div className="flex justify-center">
+          <button
+            onClick={handleSkip}
+            disabled={sending}
+            className="px-6 py-2 bg-white border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-50 transition text-sm disabled:opacity-50"
+          >
+            Skip (No Update)
           </button>
         </div>
         <p className="text-xs text-gray-500 mt-3 text-center">
-          Sending will mark this message as processed and send via WhatsApp
+          • Send Response = Update corpus + send WhatsApp reply<br />
+          • Process & Update Corpus = Update corpus only (no reply)<br />
+          • Skip = Mark processed without updating corpus
         </p>
       </div>
     </div>

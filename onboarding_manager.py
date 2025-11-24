@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from google import genai
 from google.genai import types
-from database import update_user_field, update_user_onboarding_step
+from database import update_user_field, update_user_onboarding_step, get_user_corpus, update_user_corpus
 
 logger = logging.getLogger(__name__)
 
@@ -305,6 +305,47 @@ Generate the JSON array now:"""
 
             # Save to database
             update_user_field(phone_number, open_loops=open_loops)
+
+            # Update corpus with goals information
+            try:
+                corpus = get_user_corpus(phone_number) or ""
+
+                # Build goals section for corpus
+                goals_text = "\n".join([
+                    f"- **{g.get('name')}** (Priority: {g.get('weight')}/5): {g.get('description', 'No description')}"
+                    for g in goals
+                ])
+
+                # Add or update Goals & Aspirations section
+                if "## Goals & Aspirations" in corpus:
+                    # Replace existing section
+                    corpus_lines = corpus.split('\n')
+                    in_goals_section = False
+                    new_corpus_lines = []
+
+                    for line in corpus_lines:
+                        if line.startswith('## Goals & Aspirations'):
+                            in_goals_section = True
+                            new_corpus_lines.append(line)
+                            new_corpus_lines.append(goals_text)
+                            continue
+                        elif in_goals_section and line.startswith('## '):
+                            in_goals_section = False
+                        elif in_goals_section:
+                            continue  # Skip old content
+
+                        new_corpus_lines.append(line)
+
+                    corpus = '\n'.join(new_corpus_lines)
+                else:
+                    # Add new section
+                    corpus += f"\n\n## Goals & Aspirations\n{goals_text}\n"
+
+                update_user_corpus(phone_number, corpus)
+                logger.info(f"✅ Updated corpus with {len(goals)} goals for {phone_number}")
+
+            except Exception as e:
+                logger.error(f"Failed to update corpus with goals: {str(e)}")
 
             # Mark onboarding complete
             update_user_onboarding_step(phone_number, 99)

@@ -122,4 +122,13 @@ export async function deleteUserMessages(phoneNumber: string): Promise<number> {
   return response.data.count;
 }
 
+// Update corpus from a message (extract information and add to knowledge graph)
+export async function updateCorpusFromMessage(phoneNumber: string, userMessage: string, botResponse: string = ''): Promise<void> {
+  await api.post('/api/update-corpus', {
+    phone_number: phoneNumber,
+    user_message: userMessage,
+    bot_response: botResponse,
+  });
+}
+
 export default api;
