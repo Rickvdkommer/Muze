@@ -62,7 +62,16 @@ TIMEZONE_MAP = {
     'atlanta': 'America/New_York',
     'toronto': 'America/Toronto',
     'vancouver': 'America/Vancouver',
+    'victoria': 'America/Vancouver',  # BC capital, same timezone as Vancouver
     'montreal': 'America/Montreal',
+    'calgary': 'America/Edmonton',
+    'edmonton': 'America/Edmonton',
+
+    # Pacific timezone keywords
+    'pacific': 'America/Los_Angeles',
+    'pst': 'America/Los_Angeles',
+    'pdt': 'America/Los_Angeles',
+    'pacific time': 'America/Los_Angeles',
 
     # Asia
     'singapore': 'Asia/Singapore',
@@ -122,7 +131,7 @@ class OnboardingManager:
         Parse timezone from user's location text.
 
         Args:
-            location_text: User input like "Amsterdam", "New York", "PST", etc.
+            location_text: User input like "Amsterdam", "New York", "PST", "Victoria, Pacific timezone", etc.
 
         Returns:
             Timezone string (e.g., "Europe/Amsterdam")
@@ -133,13 +142,21 @@ class OnboardingManager:
         if '/' in location_text and len(location_text.split('/')) == 2:
             return location_text
 
-        # Check common city mappings
+        # Check exact match first
         if location_lower in TIMEZONE_MAP:
             return TIMEZONE_MAP[location_lower]
 
-        # Try partial matches (e.g., "SF" in input matches "San Francisco")
+        # Try matching individual words (handles "Victoria, Pacific timezone" → checks "victoria", "pacific", "timezone")
+        words = location_lower.replace(',', ' ').split()
+        for word in words:
+            if word in TIMEZONE_MAP:
+                logger.info(f"Matched timezone keyword '{word}' in '{location_text}'")
+                return TIMEZONE_MAP[word]
+
+        # Try partial matches in TIMEZONE_MAP keys (e.g., "SF" matches "san francisco")
         for city, tz in TIMEZONE_MAP.items():
             if location_lower in city or city in location_lower:
+                logger.info(f"Partial match: '{location_text}' matched to '{city}'")
                 return tz
 
         # Default fallback
