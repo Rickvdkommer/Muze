@@ -507,28 +507,85 @@ export default function UserManagement() {
                             <p className="text-gray-500 text-center py-8">No open loops yet</p>
                           ) : (
                             <div className="space-y-4">
-                              {Object.entries(userDetails.open_loops || {}).map(([topic, data]: [string, any]) => (
-                                <div key={topic} className="border border-gray-200 rounded-lg p-4">
-                                  <div className="flex items-start justify-between mb-2">
-                                    <h4 className="font-semibold text-gray-900">{topic}</h4>
-                                    <span className={`px-2 py-1 text-xs rounded ${
-                                      data.status === 'active' ? 'bg-green-100 text-green-700' :
-                                      data.status === 'decaying' ? 'bg-yellow-100 text-yellow-700' :
-                                      'bg-gray-100 text-gray-700'
-                                    }`}>
-                                      {data.status}
-                                    </span>
+                              {Object.entries(userDetails.open_loops || {}).map(([topic, data]: [string, any]) => {
+                                // Calculate next check-in time based on weight
+                                const getNextCheckInTime = () => {
+                                  if (!userDetails.last_interaction_at) return 'No interactions yet';
+
+                                  const lastInteraction = new Date(userDetails.last_interaction_at);
+                                  const weight = data.weight || 3;
+                                  let hoursToAdd = 24; // default
+
+                                  if (weight >= 5) hoursToAdd = 4;
+                                  else if (weight >= 3) hoursToAdd = 24;
+                                  else hoursToAdd = 48;
+
+                                  const nextCheckIn = new Date(lastInteraction.getTime() + hoursToAdd * 60 * 60 * 1000);
+                                  const now = new Date();
+
+                                  // Check if it's in the past (overdue)
+                                  if (nextCheckIn < now) {
+                                    return 'Ready to send (waiting for next cron cycle)';
+                                  }
+
+                                  // Calculate time remaining
+                                  const hoursRemaining = Math.round((nextCheckIn.getTime() - now.getTime()) / (1000 * 60 * 60));
+
+                                  if (hoursRemaining < 1) {
+                                    const minutesRemaining = Math.round((nextCheckIn.getTime() - now.getTime()) / (1000 * 60));
+                                    return `~${minutesRemaining}m (${nextCheckIn.toLocaleString()})`;
+                                  } else if (hoursRemaining < 24) {
+                                    return `~${hoursRemaining}h (${nextCheckIn.toLocaleString()})`;
+                                  } else {
+                                    const daysRemaining = Math.round(hoursRemaining / 24);
+                                    return `~${daysRemaining}d (${nextCheckIn.toLocaleString()})`;
+                                  }
+                                };
+
+                                return (
+                                  <div key={topic} className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition">
+                                    <div className="flex items-start justify-between mb-2">
+                                      <h4 className="font-semibold text-gray-900">{topic}</h4>
+                                      <span className={`px-2 py-1 text-xs rounded ${
+                                        data.status === 'active' ? 'bg-green-100 text-green-700' :
+                                        data.status === 'decaying' ? 'bg-yellow-100 text-yellow-700' :
+                                        'bg-gray-100 text-gray-700'
+                                      }`}>
+                                        {data.status}
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mb-3">{data.description}</p>
+                                    <div className="text-xs space-y-1.5">
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-500">Weight:</span>
+                                        <span className="font-medium text-gray-900">{data.weight}/5</span>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-gray-500">Last Updated:</span>
+                                        <span className="text-gray-700">{new Date(data.last_updated).toLocaleDateString()}</span>
+                                      </div>
+                                      {data.next_event_date && (
+                                        <div className="flex items-center gap-2">
+                                          <span className="text-gray-500">Next Event:</span>
+                                          <span className="text-gray-700">{new Date(data.next_event_date).toLocaleDateString()}</span>
+                                        </div>
+                                      )}
+                                      <div className="flex items-center gap-2 pt-2 border-t border-gray-200 mt-2">
+                                        <span className="text-gray-500">Next Check-in:</span>
+                                        <span className="font-medium text-blue-600">{getNextCheckInTime()}</span>
+                                      </div>
+                                    </div>
                                   </div>
-                                  <p className="text-sm text-gray-600 mb-2">{data.description}</p>
-                                  <div className="text-xs text-gray-500 space-y-1">
-                                    <p>Weight: {data.weight}/5</p>
-                                    <p>Last Updated: {new Date(data.last_updated).toLocaleDateString()}</p>
-                                    {data.next_event_date && <p>Next Event: {new Date(data.next_event_date).toLocaleDateString()}</p>}
-                                  </div>
-                                </div>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
+                          <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                            <p className="text-sm text-blue-800">
+                              <strong>ℹ️ Note:</strong> Next check-in times are calculated based on weight (5=4h, 3-4=24h, 1-2=48h) from last interaction.
+                              Messages are currently sent automatically. To enable manual approval before sending, we can modify the scheduler to create pending messages instead.
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>
