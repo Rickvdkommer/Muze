@@ -331,8 +331,21 @@ export default function UserManagement() {
                           </div>
                         </div>
                       ) : (
-                        <div className="prose prose-sm max-w-none text-gray-900">
-                          <ReactMarkdown>{corpus}</ReactMarkdown>
+                        <div className="prose prose-lg max-w-none text-gray-900 bg-white border border-gray-200 rounded-lg p-6">
+                          <ReactMarkdown
+                            components={{
+                              h1: ({ node, ...props }) => <h1 className="text-2xl font-bold text-gray-900 mt-6 mb-4 pb-2 border-b border-gray-300" {...props} />,
+                              h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-gray-900 mt-6 mb-3" {...props} />,
+                              h3: ({ node, ...props }) => <h3 className="text-lg font-semibold text-gray-800 mt-4 mb-2" {...props} />,
+                              p: ({ node, ...props }) => <p className="text-gray-700 my-3 leading-relaxed" {...props} />,
+                              ul: ({ node, ...props }) => <ul className="list-disc list-inside my-3 space-y-1 text-gray-700" {...props} />,
+                              li: ({ node, ...props }) => <li className="ml-4" {...props} />,
+                              strong: ({ node, ...props }) => <strong className="font-semibold text-gray-900" {...props} />,
+                              em: ({ node, ...props }) => <em className="italic text-gray-800" {...props} />,
+                            }}
+                          >
+                            {corpus}
+                          </ReactMarkdown>
                         </div>
                       )}
                     </div>
