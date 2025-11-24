@@ -507,10 +507,10 @@ def update_corpus_endpoint():
         data = request.get_json()
         phone_number = data.get('phone_number')
         user_message = data.get('user_message')
-        bot_response = data.get('bot_response')
+        bot_response = data.get('bot_response', '')  # Optional, defaults to empty string
 
-        if not phone_number or not user_message or not bot_response:
-            return jsonify({"error": "phone_number, user_message, and bot_response required"}), 400
+        if not phone_number or not user_message:
+            return jsonify({"error": "phone_number and user_message required"}), 400
 
         # Update corpus using the intelligent updater
         success = corpus_updater.update_corpus(phone_number, user_message, bot_response)
