@@ -276,7 +276,7 @@ Generate the natural batched message now (just the message, nothing else):"""
 
                 candidates = []  # List of (question, weight, topic) tuples
 
-                # Check for upcoming events (happening today or tomorrow)
+                # Rule A: Check for upcoming events (happening today or tomorrow)
                 upcoming = self.state_manager.get_upcoming_events(open_loops, days_ahead=2)
                 for topic, event_date, days_until in upcoming:
                     # Skip if pending nudge already exists
@@ -298,7 +298,7 @@ Generate the natural batched message now (just the message, nothing else):"""
 
                     candidates.append((question, weight, topic))
 
-                # Check for decaying topics
+                # Rule B: Check for decaying topics (7+ days without update)
                 decaying = self.state_manager.detect_decaying_loops(open_loops, days_threshold=7)
                 for topic in decaying:
                     # Skip if pending nudge already exists
@@ -311,6 +311,49 @@ Generate the natural batched message now (just the message, nothing else):"""
                     )
                     weight = loop_data.get('weight', 3)
                     candidates.append((question, weight, topic))
+
+                # Rule C: Check for high-weight loops ready based on pacing
+                # This ensures high-priority topics get regular check-ins even without events or decay
+                now = datetime.utcnow()
+                for topic, loop_data in open_loops.items():
+                    # Skip if already a candidate from Rules A or B
+                    if any(c[2] == topic for c in candidates):
+                        continue
+
+                    # Skip if pending nudge already exists
+                    if check_existing_pending_nudge(phone, topic):
+                        continue
+
+                    weight = loop_data.get('weight', 3)
+                    last_updated = loop_data.get('last_updated')
+
+                    # Only consider weight 4-5 loops for proactive check-ins
+                    if weight < 4:
+                        continue
+
+                    # Check if enough time has passed based on weight
+                    if last_updated:
+                        try:
+                            from dateutil import parser
+                            last_updated_dt = parser.parse(last_updated)
+                            hours_since = (now - last_updated_dt).total_seconds() / 3600
+
+                            # Pacing thresholds for proactive check-ins
+                            # More conservative than real-time pacing to avoid over-messaging
+                            if weight >= 5:
+                                threshold = 48  # 2 days for weight 5 (high priority)
+                            else:  # weight 4
+                                threshold = 96  # 4 days for weight 4 (medium-high priority)
+
+                            if hours_since >= threshold:
+                                question = self.state_manager.generate_check_in_question(
+                                    topic, loop_data, corpus
+                                )
+                                candidates.append((question, weight, topic))
+                                logger.info(f"Rule C: Added weight {weight} loop '{topic}' (last updated {hours_since:.1f}h ago)")
+                        except Exception as e:
+                            logger.error(f"Error parsing last_updated for {topic}: {str(e)}")
+                            continue
 
                 if not candidates:
                     logger.info(f"No candidates for {phone}, skipping")
